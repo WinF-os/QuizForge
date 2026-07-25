@@ -21,7 +21,7 @@
     <button type="button" class="app-header-back" id="btnHeaderBack" aria-label="Go back" hidden>
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
     </button>
-    <h1 class="app-header-title">QuizForge</h1>
+    <h1 class="app-header-title">QuizForge <span class="app-header-version"></span></h1>
     <div class="app-header-avatar" aria-hidden="true">
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" /></svg>
     </div>
@@ -83,7 +83,13 @@
       <div class="create-step" id="stepSource">
         <div>
           <h2 class="screen-title">Create New Exam</h2>
-          <p class="screen-sub">Provide your source material and let AI draft the exam.</p>
+          <p class="screen-sub" id="sourceScreenSub">Provide your source material and let AI draft the exam.</p>
+        </div>
+
+        <div class="library-toggle" id="modeToggle">
+          <button type="button" class="library-toggle-btn is-active" data-mode="ai">AI Generate</button>
+          <button type="button" class="library-toggle-btn" data-mode="manual">Manual Build</button>
+          <button type="button" class="library-toggle-btn" data-mode="auto">Auto-Extract</button>
         </div>
 
         <label class="field-block">
@@ -144,7 +150,7 @@
           <textarea class="text-input" id="pastedTextArea" rows="6" placeholder="Paste notes, an article, or a summary of the material here…"></textarea>
         </label>
 
-        <div class="card banner-card">
+        <div class="card banner-card" id="smartBlueprintCard">
           <p class="section-heading">Smart Blueprinting</p>
           <p class="screen-sub">Gemini reads your material and maps it to question types and difficulty automatically.</p>
         </div>
@@ -166,12 +172,12 @@
           <p class="screen-sub">Fine-tune the mix of question types and difficulty for your exam.</p>
         </div>
 
-        <div class="card">
+        <div class="card" id="typeCard">
           <p class="section-heading" style="margin-bottom:12px;">Question Types</p>
           <div class="type-list" id="typeList"></div>
         </div>
 
-        <div class="card">
+        <div class="card" id="difficultyCard">
           <p class="section-heading" style="margin-bottom:14px;">Complexity Level</p>
           <input type="range" min="0" max="2" step="1" value="1" class="difficulty-slider" id="difficultySlider">
           <div class="difficulty-labels" id="difficultyLabels"></div>
@@ -196,6 +202,47 @@
         <p class="empty-note" id="configureEmptyNote" hidden></p>
 
         <button type="button" class="btn btn--primary btn--block" id="btnGenerateExam" disabled>✨ Generate Exam</button>
+      </div>
+
+      <div class="create-step" id="stepManualBuilder" hidden>
+        <div>
+          <h2 class="screen-title">Build Your Exam</h2>
+          <p class="screen-sub">Add each question by hand — no AI involved.</p>
+        </div>
+
+        <div class="card">
+          <label class="field-block">
+            <span class="field-label">Question Type</span>
+            <select class="select-input" id="manualTypeSelect">
+              <option value="multipleChoice">Multiple Choice</option>
+              <option value="trueFalse">True / False</option>
+              <option value="identification">Identification</option>
+              <option value="calculation">Calculation</option>
+            </select>
+          </label>
+
+          <label class="field-block">
+            <span class="field-label">Question Prompt</span>
+            <textarea class="text-input" id="manualPromptInput" rows="3" placeholder="Type the question…"></textarea>
+          </label>
+
+          <div id="manualTypeFields"></div>
+
+          <label class="field-block">
+            <span class="field-label">Explanation (optional)</span>
+            <textarea class="text-input" id="manualExplanationInput" rows="2" placeholder="Shown after the exam is submitted…"></textarea>
+          </label>
+
+          <button type="button" class="btn btn--outline btn--block" id="btnAddManualQuestion">+ Add Question</button>
+        </div>
+
+        <div class="card">
+          <p class="section-heading" style="margin-bottom:10px;">Questions Added (<span id="manualQuestionCount">0</span>)</p>
+          <p class="empty-note" id="manualEmptyNote">No questions yet — add your first one above.</p>
+          <div class="results-list" id="manualQuestionList"></div>
+        </div>
+
+        <button type="button" class="btn btn--primary btn--block" id="btnStartManualExam" disabled>Start Exam</button>
       </div>
 
       <div class="create-step generating-screen" id="stepGenerating" hidden>
@@ -289,7 +336,7 @@
 
       <div class="card">
         <p class="section-heading">About this app</p>
-        <p class="screen-sub" style="margin-top:8px;">QuizForge turns a photo of your notes or textbook pages into a ready-to-take exam using Google Gemini. Question generation runs through a Supabase Edge Function so the AI key stays off your device.</p>
+        <p class="screen-sub" style="margin-top:8px;">QuizForge turns a photo of your notes or textbook pages into a ready-to-take exam using Google Gemini. Question generation runs through a Supabase Edge Function so the AI key stays off your device. Prefer not to use AI? Manual Build and Auto-Extract on the Create screen work fully offline of Gemini.</p>
       </div>
 
       <div class="card">

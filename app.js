@@ -1,10 +1,14 @@
 'use strict';
 
+const APP_VERSION = 'QF_SYS_V.1.0.1';
+
 /* ============ State ============ */
 
 const state = {
   tab: 'home',
-  createStep: 'source', // source | configure | generating | quiz | results
+  createStep: 'source', // source | configure | manualBuilder | generating | quiz | results
+  generationMode: 'ai', // ai | manual | auto
+  manualQuestions: [],
   examTitle: '',
   subject: '',
   sourceImages: [], // { dataUrl, mimeType }
@@ -208,7 +212,7 @@ function renderLibrary() {
 
 function showCreateStep(step) {
   state.createStep = step;
-  ['stepSource', 'stepConfigure', 'stepGenerating', 'stepQuiz', 'stepResults'].forEach((id) => {
+  ['stepSource', 'stepConfigure', 'stepManualBuilder', 'stepGenerating', 'stepQuiz', 'stepResults'].forEach((id) => {
     $(id).hidden = id !== `step${step[0].toUpperCase()}${step.slice(1)}`;
   });
   $('btnHeaderBack').hidden = step === 'source';
@@ -217,16 +221,44 @@ function showCreateStep(step) {
 
 $('btnHeaderBack').addEventListener('click', () => {
   if (state.tab !== 'create') return;
-  const order = ['source', 'configure', 'generating', 'quiz', 'results'];
+  const order = state.generationMode === 'manual'
+    ? ['source', 'manualBuilder', 'quiz', 'results']
+    : ['source', 'configure', 'generating', 'quiz', 'results'];
   const idx = order.indexOf(state.createStep);
   if (idx > 0) showCreateStep(order[idx - 1]);
 });
+
+/* ============ Create: generation mode ============ */
+
+document.querySelectorAll('#modeToggle .library-toggle-btn').forEach((btn) => {
+  btn.addEventListener('click', () => setGenerationMode(btn.dataset.mode));
+});
+
+function setGenerationMode(mode) {
+  state.generationMode = mode;
+  document.querySelectorAll('#modeToggle .library-toggle-btn').forEach((btn) => {
+    btn.classList.toggle('is-active', btn.dataset.mode === mode);
+  });
+  $('smartBlueprintCard').hidden = mode !== 'ai';
+  if (mode === 'ai') {
+    $('sourceScreenSub').textContent = 'Provide your source material and let AI draft the exam.';
+    $('btnContinueToConfigure').textContent = 'Continue to Configuration';
+  } else if (mode === 'manual') {
+    $('sourceScreenSub').textContent = 'Skip the AI — build every question yourself, no source material required.';
+    $('btnContinueToConfigure').textContent = 'Continue to Question Builder';
+  } else {
+    $('sourceScreenSub').textContent = 'Paste text and get fill-in-the-blank questions instantly, no AI required.';
+    $('btnContinueToConfigure').textContent = 'Continue to Configuration';
+  }
+  updateContinueGating();
+}
 
 function resetCreateFlow() {
   state.examTitle = '';
   state.subject = '';
   state.sourceImages = [];
   state.sourceText = '';
+  state.manualQuestions = [];
   state.config = { types: { multipleChoice: true, trueFalse: false, identification: false, calculation: false, essay: false }, difficulty: 'medium', count: 10 };
   state.quiz = null;
   state.answers = {};
@@ -236,7 +268,11 @@ function resetCreateFlow() {
   $('subjectSelect').value = '';
   $('pastedTextArea').value = '';
   $('pasteTextBlock').hidden = true;
+  $('manualPromptInput').value = '';
+  $('manualExplanationInput').value = '';
   renderSourcePreview();
+  setGenerationMode('ai');
+  renderManualBuilder();
   updateContinueGating();
   showCreateStep('source');
 }
@@ -280,12 +316,18 @@ function renderSourcePreview() {
 
 function updateContinueGating() {
   const hasSource = state.sourceImages.length > 0 || state.sourceText.trim().length > 0;
-  $('btnContinueToConfigure').disabled = !hasSource;
+  const ok = state.generationMode === 'manual' ? true : hasSource;
+  $('btnContinueToConfigure').disabled = !ok;
 }
 
 $('btnContinueToConfigure').addEventListener('click', () => {
-  renderConfigureScreen();
-  showCreateStep('configure');
+  if (state.generationMode === 'manual') {
+    renderManualBuilder();
+    showCreateStep('manualBuilder');
+  } else {
+    renderConfigureScreen();
+    showCreateStep('configure');
+  }
 });
 
 /* ============ Camera capture ============ */
@@ -332,6 +374,10 @@ $('btnCameraShutter').addEventListener('click', () => {
 /* ============ Create: configure step ============ */
 
 function renderConfigureScreen() {
+  $('typeCard').hidden = state.generationMode === 'auto';
+  $('difficultyCard').hidden = state.generationMode === 'auto';
+  $('btnGenerateExam').textContent = state.generationMode === 'auto' ? '⚡ Auto-Extract Exam (no AI)' : '✨ Generate Exam';
+
   $('typeList').innerHTML = QUESTION_TYPES.map((type) => {
     const active = state.config.types[type.key];
     return `
@@ -383,11 +429,18 @@ $('btnCountPlus').addEventListener('click', () => {
 });
 
 function updateGenerateGating() {
+  const note = $('configureEmptyNote');
+  if (state.generationMode === 'auto') {
+    const hasText = state.sourceText.trim().length > 0;
+    $('btnGenerateExam').disabled = !hasText;
+    note.hidden = hasText;
+    if (!hasText) note.textContent = 'Paste some text first — Auto-Extract only reads pasted text, not images.';
+    return;
+  }
   const selectedCount = Object.values(state.config.types).filter(Boolean).length;
   const hasSource = state.sourceImages.length > 0 || state.sourceText.trim().length > 0;
   const canGenerate = selectedCount > 0 && hasSource;
   $('btnGenerateExam').disabled = !canGenerate;
-  const note = $('configureEmptyNote');
   if (canGenerate) {
     note.hidden = true;
   } else {
@@ -396,7 +449,10 @@ function updateGenerateGating() {
   }
 }
 
-$('btnGenerateExam').addEventListener('click', runGeneration);
+$('btnGenerateExam').addEventListener('click', () => {
+  if (state.generationMode === 'auto') runAutoExtract();
+  else runGeneration();
+});
 $('btnBackToConfigure').addEventListener('click', () => showCreateStep('configure'));
 
 /* ============ Generation ============ */
@@ -477,6 +533,178 @@ async function runGeneration() {
     $('btnBackToConfigure').hidden = false;
   }
 }
+
+/* ============ Auto-Extract (no AI) ============ */
+
+const STOPWORDS = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'of', 'to', 'in', 'on', 'at', 'for', 'with', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'this', 'that', 'these', 'those', 'it', 'its', 'as', 'by', 'from', 'into', 'than', 'then', 'which', 'who', 'whom', 'their', 'his', 'her', 'they', 'he', 'she', 'we', 'you', 'i']);
+
+function extractSentences(text) {
+  return text.replace(/\s+/g, ' ').split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter((s) => s.length > 25 && s.length < 240);
+}
+
+function pickKeyTerm(sentence) {
+  const words = sentence.replace(/[.,!?;:'"()]/g, '').split(' ').filter(Boolean);
+  const numberMatch = words.find((w) => /^\d[\d,.]*$/.test(w));
+  if (numberMatch) return numberMatch;
+  const capMatch = words.find((w, i) => i > 0 && /^[A-Z][a-z]{2,}/.test(w));
+  if (capMatch) return capMatch;
+  const candidates = words.filter((w) => w.length > 5 && !STOPWORDS.has(w.toLowerCase()));
+  candidates.sort((a, b) => b.length - a.length);
+  return candidates[0] || null;
+}
+
+function runAutoExtract() {
+  const sentences = extractSentences(state.sourceText);
+  const seen = new Set();
+  const questions = [];
+
+  for (const sentence of sentences) {
+    if (questions.length >= state.config.count) break;
+    const term = pickKeyTerm(sentence);
+    if (!term || seen.has(term.toLowerCase())) continue;
+    const blanked = sentence.replace(term, '_____');
+    if (blanked === sentence) continue;
+    seen.add(term.toLowerCase());
+    questions.push({
+      id: `q${questions.length + 1}`,
+      type: 'identification',
+      prompt: `Fill in the blank: ${blanked}`,
+      correctAnswer: term,
+      acceptableAnswers: [term],
+      explanation: sentence,
+    });
+  }
+
+  if (!questions.length) {
+    $('configureEmptyNote').hidden = false;
+    $('configureEmptyNote').textContent = 'Could not find enough factual sentences to build questions. Try pasting more detailed text, or use Manual Build instead.';
+    return;
+  }
+
+  state.quiz = { questions, examTitle: state.examTitle, subject: state.subject, difficulty: 'auto' };
+  state.answers = {};
+  state.essayGrades = {};
+  state.quizIndex = 0;
+  renderQuizQuestion();
+  showCreateStep('quiz');
+}
+
+/* ============ Manual Build (no AI) ============ */
+
+function renderManualTypeFields() {
+  const type = $('manualTypeSelect').value;
+  const box = $('manualTypeFields');
+  if (type === 'multipleChoice') {
+    box.innerHTML = `
+      <div class="field-block">
+        <span class="field-label">Choices (select the correct one)</span>
+        ${[0, 1, 2, 3].map((i) => `
+          <div class="manual-choice-row">
+            <input type="radio" name="manualMcCorrect" value="${i}" id="manualMcCorrect${i}" ${i === 0 ? 'checked' : ''}>
+            <input type="text" class="text-input" id="manualChoice${i}" placeholder="Choice ${i + 1}">
+          </div>
+        `).join('')}
+      </div>`;
+  } else if (type === 'trueFalse') {
+    box.innerHTML = `
+      <label class="field-block">
+        <span class="field-label">Correct Answer</span>
+        <select class="select-input" id="manualTfCorrect">
+          <option value="True">True</option>
+          <option value="False">False</option>
+        </select>
+      </label>`;
+  } else if (type === 'identification') {
+    box.innerHTML = `
+      <label class="field-block">
+        <span class="field-label">Correct Answer</span>
+        <input type="text" class="text-input" id="manualIdCorrect" placeholder="e.g. Mitochondria">
+      </label>
+      <label class="field-block">
+        <span class="field-label">Other Acceptable Answers (comma-separated, optional)</span>
+        <input type="text" class="text-input" id="manualIdAlt" placeholder="e.g. mitochondrion">
+      </label>`;
+  } else {
+    box.innerHTML = `
+      <label class="field-block">
+        <span class="field-label">Correct Numeric Answer</span>
+        <input type="text" inputmode="decimal" class="text-input" id="manualCalcCorrect" placeholder="e.g. 42">
+      </label>`;
+  }
+}
+
+$('manualTypeSelect').addEventListener('change', renderManualTypeFields);
+
+function renderManualBuilder() {
+  renderManualTypeFields();
+  renderManualQuestionList();
+}
+
+function renderManualQuestionList() {
+  $('manualQuestionCount').textContent = state.manualQuestions.length;
+  $('manualEmptyNote').hidden = state.manualQuestions.length > 0;
+  $('manualQuestionList').innerHTML = state.manualQuestions.map((q, i) => `
+    <div class="card result-item">
+      <p class="result-item-index">${TYPE_LABELS[q.type]}</p>
+      <p class="question-prompt">${esc(q.prompt)}</p>
+      <button type="button" class="link-btn js-remove-manual" data-index="${i}">Remove</button>
+    </div>
+  `).join('');
+  $('manualQuestionList').querySelectorAll('.js-remove-manual').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.manualQuestions.splice(Number(btn.dataset.index), 1);
+      renderManualQuestionList();
+    });
+  });
+  $('btnStartManualExam').disabled = state.manualQuestions.length === 0;
+}
+
+$('btnAddManualQuestion').addEventListener('click', () => {
+  const type = $('manualTypeSelect').value;
+  const prompt = $('manualPromptInput').value.trim();
+  const explanation = $('manualExplanationInput').value.trim();
+  if (!prompt) { $('manualPromptInput').focus(); return; }
+
+  const question = { id: `q${state.manualQuestions.length + 1}`, type, prompt, explanation };
+
+  if (type === 'multipleChoice') {
+    const choices = [0, 1, 2, 3].map((i) => $(`manualChoice${i}`).value.trim());
+    if (choices.some((c) => !c)) return;
+    const correctIndex = Number(document.querySelector('input[name="manualMcCorrect"]:checked').value);
+    question.choices = choices;
+    question.correctAnswer = choices[correctIndex];
+  } else if (type === 'trueFalse') {
+    question.choices = ['True', 'False'];
+    question.correctAnswer = $('manualTfCorrect').value;
+  } else if (type === 'identification') {
+    const correct = $('manualIdCorrect').value.trim();
+    if (!correct) return;
+    const alt = $('manualIdAlt').value.split(',').map((s) => s.trim()).filter(Boolean);
+    question.correctAnswer = correct;
+    question.acceptableAnswers = [correct, ...alt];
+  } else if (type === 'calculation') {
+    const correct = $('manualCalcCorrect').value.trim();
+    if (!correct || Number.isNaN(parseFloat(correct))) return;
+    question.correctAnswer = correct;
+  }
+
+  state.manualQuestions.push(question);
+  $('manualPromptInput').value = '';
+  $('manualExplanationInput').value = '';
+  if (type === 'multipleChoice') [0, 1, 2, 3].forEach((i) => { $(`manualChoice${i}`).value = ''; });
+  if (type === 'identification') { $('manualIdCorrect').value = ''; $('manualIdAlt').value = ''; }
+  if (type === 'calculation') { $('manualCalcCorrect').value = ''; }
+  renderManualQuestionList();
+});
+
+$('btnStartManualExam').addEventListener('click', () => {
+  state.quiz = { questions: state.manualQuestions, examTitle: state.examTitle, subject: state.subject, difficulty: 'manual' };
+  state.answers = {};
+  state.essayGrades = {};
+  state.quizIndex = 0;
+  renderQuizQuestion();
+  showCreateStep('quiz');
+});
 
 /* ============ Quiz runner ============ */
 
@@ -638,6 +866,7 @@ $('btnCreateAnother').addEventListener('click', resetCreateFlow);
 initTheme();
 renderHome();
 resetCreateFlow();
+document.querySelector('.app-header-version').textContent = APP_VERSION;
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
