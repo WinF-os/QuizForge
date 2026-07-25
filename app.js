@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.0.3';
+const APP_VERSION = 'QF_SYS_V.1.0.4';
 
 /* ============ State ============ */
 
@@ -25,7 +25,8 @@ const state = {
   libraryTab: 'completed',
   librarySearch: '',
   cameraStream: null,
-  geminiApiKey: localStorage.getItem('quizforge-gemini-key') || '',
+  geminiApiKeys: loadGeminiKeys(),
+  activeKeyIndex: 0,
 };
 
 const QUESTION_TYPES = [
@@ -114,13 +115,60 @@ $('themeToggle').addEventListener('change', (event) => {
   updateThemeLabel(next);
 });
 
-/* ============ Gemini API key (BYOK) ============ */
+/* ============ Gemini API keys (BYOK, multi-key with quota rotation) ============ */
+
+function loadGeminiKeys() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('quizforge-gemini-keys') || '[]');
+    if (Array.isArray(stored) && stored.length) return stored;
+  } catch { /* ignore malformed storage */ }
+  const legacy = localStorage.getItem('quizforge-gemini-key');
+  if (legacy) {
+    const migrated = [{ label: 'Key 1', key: legacy }];
+    localStorage.setItem('quizforge-gemini-keys', JSON.stringify(migrated));
+    localStorage.removeItem('quizforge-gemini-key');
+    return migrated;
+  }
+  return [];
+}
+
+function saveGeminiKeys() {
+  localStorage.setItem('quizforge-gemini-keys', JSON.stringify(state.geminiApiKeys));
+}
+
+function maskKey(key) {
+  return key.length > 12 ? `${key.slice(0, 8)}…${key.slice(-4)}` : key;
+}
 
 function refreshGeminiKeyStatus() {
-  $('geminiKeyInput').value = state.geminiApiKey;
-  $('geminiKeyStatus').textContent = state.geminiApiKey
-    ? 'Key saved in this browser.'
-    : 'No key saved yet — AI Generate and essay grading are disabled until you add one.';
+  const keys = state.geminiApiKeys;
+  $('geminiKeyStatus').textContent = keys.length
+    ? `${keys.length} key${keys.length > 1 ? 's' : ''} saved in this browser.`
+    : 'No keys saved yet — AI Generate and essay grading are disabled until you add one.';
+
+  $('geminiKeyList').innerHTML = keys.map((k, i) => `
+    <div class="key-row">
+      <input type="text" class="text-input js-key-label" data-index="${i}" value="${esc(k.label)}">
+      <span class="key-row-masked">${esc(maskKey(k.key))}</span>
+      <button type="button" class="link-btn js-remove-key" data-index="${i}">Remove</button>
+    </div>
+  `).join('');
+
+  $('geminiKeyList').querySelectorAll('.js-key-label').forEach((input) => {
+    input.addEventListener('change', () => {
+      const idx = Number(input.dataset.index);
+      state.geminiApiKeys[idx].label = input.value.trim() || `Key ${idx + 1}`;
+      saveGeminiKeys();
+    });
+  });
+  $('geminiKeyList').querySelectorAll('.js-remove-key').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.geminiApiKeys.splice(Number(btn.dataset.index), 1);
+      if (state.activeKeyIndex >= state.geminiApiKeys.length) state.activeKeyIndex = 0;
+      saveGeminiKeys();
+      onGeminiKeyChanged();
+    });
+  });
 }
 
 function onGeminiKeyChanged() {
@@ -129,19 +177,49 @@ function onGeminiKeyChanged() {
   if (state.createStep === 'configure') updateGenerateGating();
 }
 
-$('btnSaveGeminiKey').addEventListener('click', () => {
+$('btnGetGeminiKey').addEventListener('click', () => {
+  window.open('https://aistudio.google.com/apikey', '_blank', 'noopener');
+});
+
+$('btnPasteGeminiKey').addEventListener('click', async () => {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text) $('geminiKeyInput').value = text.trim();
+  } catch {
+    $('geminiKeyStatus').textContent = 'Could not read clipboard — paste manually instead.';
+  }
+});
+
+$('btnAddGeminiKey').addEventListener('click', () => {
   const key = $('geminiKeyInput').value.trim();
   if (!key) return;
-  state.geminiApiKey = key;
-  localStorage.setItem('quizforge-gemini-key', key);
+  state.geminiApiKeys.push({ label: `Key ${state.geminiApiKeys.length + 1}`, key });
+  saveGeminiKeys();
+  $('geminiKeyInput').value = '';
   onGeminiKeyChanged();
 });
 
-$('btnClearGeminiKey').addEventListener('click', () => {
-  state.geminiApiKey = '';
-  localStorage.removeItem('quizforge-gemini-key');
-  onGeminiKeyChanged();
-});
+function isQuotaError(message) {
+  return /RESOURCE_EXHAUSTED|429|exceeded your current quota/i.test(message || '');
+}
+
+async function callWithKeyRotation(name, body) {
+  const keys = state.geminiApiKeys;
+  if (!keys.length) throw new Error('Add your Gemini API key in Profile first.');
+  for (let i = 0; i < keys.length; i++) {
+    const idx = (state.activeKeyIndex + i) % keys.length;
+    try {
+      const data = await callEdgeFunction(name, { ...body, geminiApiKey: keys[idx].key });
+      state.activeKeyIndex = idx;
+      return data;
+    } catch (err) {
+      if (!isQuotaError(err.message)) throw err;
+    }
+  }
+  const quotaErr = new Error('All your saved Gemini keys have used up their free quota for now.');
+  quotaErr.allKeysExhausted = true;
+  throw quotaErr;
+}
 
 /* ============ Navigation ============ */
 
@@ -346,7 +424,7 @@ function renderSourcePreview() {
 
 function updateContinueGating() {
   const hasSource = state.sourceImages.length > 0 || state.sourceText.trim().length > 0;
-  const missingKey = state.generationMode === 'ai' && !state.geminiApiKey;
+  const missingKey = state.generationMode === 'ai' && !state.geminiApiKeys.length;
   const note = $('sourceEmptyNote');
   note.hidden = !missingKey;
   if (missingKey) note.textContent = 'Add your Gemini API key in Profile to use AI Generate.';
@@ -473,7 +551,7 @@ function updateGenerateGating() {
   }
   const selectedCount = Object.values(state.config.types).filter(Boolean).length;
   const hasSource = state.sourceImages.length > 0 || state.sourceText.trim().length > 0;
-  const missingKey = !state.geminiApiKey;
+  const missingKey = !state.geminiApiKeys.length;
   const canGenerate = selectedCount > 0 && hasSource && !missingKey;
   $('btnGenerateExam').disabled = !canGenerate;
   if (canGenerate) {
@@ -542,7 +620,7 @@ async function runGeneration() {
   }, 1600);
 
   try {
-    const data = await callEdgeFunction('generate-quiz', {
+    const data = await callWithKeyRotation('generate-quiz', {
       examTitle: state.examTitle,
       subject: state.subject,
       images: state.sourceImages.map((img) => ({ dataUrl: img.dataUrl, mimeType: parseDataUrlMime(img.dataUrl, img.mimeType) })),
@@ -550,7 +628,6 @@ async function runGeneration() {
       questionTypes: typesToList(state.config.types),
       difficulty: state.config.difficulty,
       count: state.config.count,
-      geminiApiKey: state.geminiApiKey,
     });
 
     if (!data?.questions?.length) throw new Error('The AI did not return any questions. Try again with clearer source material.');
@@ -567,7 +644,13 @@ async function runGeneration() {
     $('generatingSpinner').hidden = true;
     $('generatingMessage').textContent = '';
     $('generatingErrorCard').hidden = false;
-    $('generatingErrorText').textContent = err.message || 'Something went wrong generating the exam.';
+    if (err.allKeysExhausted) {
+      $('generatingErrorText').innerHTML = `${esc(err.message)} <a href="#" class="js-goto-profile-link">Add another key</a> or <a href="https://console.cloud.google.com/billing" target="_blank" rel="noopener">enable billing</a> on one of them.`;
+      const link = $('generatingErrorText').querySelector('.js-goto-profile-link');
+      link?.addEventListener('click', (e) => { e.preventDefault(); switchTab('profile'); });
+    } else {
+      $('generatingErrorText').textContent = err.message || 'Something went wrong generating the exam.';
+    }
     $('btnBackToConfigure').hidden = false;
   }
 }
@@ -881,12 +964,11 @@ async function renderResults() {
   if (ungraded.length) {
     await Promise.all(ungraded.map(async (q) => {
       try {
-        const result = await callEdgeFunction('grade-essay', {
+        const result = await callWithKeyRotation('grade-essay', {
           question: q.prompt,
           expectedAnswer: q.expectedAnswer,
           rubric: q.rubric,
           answer: state.answers[q.id],
-          geminiApiKey: state.geminiApiKey,
         });
         state.essayGrades[q.id] = result;
       } catch (err) {

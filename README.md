@@ -38,7 +38,7 @@ supabase functions deploy grade-essay
 
 ### 3. Add your Gemini API key (BYOK)
 
-Every user brings their own key — there's no shared server-side key. In the app, go to **Profile → Your Gemini API Key**, paste a free key from [Google AI Studio](https://aistudio.google.com/apikey), and save. The key is stored only in that browser's `localStorage` and sent along with each `generate-quiz`/`grade-essay` request; AI Generate and essay grading are disabled until a key is saved. Manual Build and Auto-Extract don't need a key at all — see below.
+Every user brings their own key — there's no shared server-side key. In the app, go to **Profile → Your Gemini API Keys**. Tap **Get a Free Gemini API Key** to open Google AI Studio (auto-signs in if already logged into Gmail in that browser), create a key, copy it, then come back and either paste it or tap the clipboard button to fill it in, then **Add Key**. Keys are stored only in that browser's `localStorage`. You can add more than one (e.g. from separate Google accounts) — if a key's free quota runs out mid-use, QuizForge automatically retries with the next saved key before giving up. AI Generate and essay grading are disabled until at least one key is saved. Manual Build and Auto-Extract don't need a key at all — see below.
 
 ## Notes
 

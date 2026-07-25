@@ -324,16 +324,21 @@
       </div>
 
       <div class="card">
-        <p class="section-heading">Your Gemini API Key</p>
-        <p class="screen-sub" style="margin-top:6px;">Required for AI Generate and essay grading. Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Stored only in this browser — used only for your own quiz requests.</p>
+        <p class="section-heading">Your Gemini API Keys</p>
+        <p class="screen-sub" style="margin-top:6px;">Required for AI Generate and essay grading. Stored only in this browser. Add more than one (e.g. from different Google accounts) — QuizForge automatically switches to the next one if a key's free quota runs out.</p>
+
+        <button type="button" class="btn btn--outline btn--block" id="btnGetGeminiKey" style="margin-top:10px;">Get a Free Gemini API Key ↗</button>
+
         <label class="field-block" style="margin-top:10px;">
-          <span class="field-label">API Key</span>
-          <input type="text" class="text-input" id="geminiKeyInput" placeholder="Paste your Gemini API key">
+          <span class="field-label">Paste New Key</span>
+          <div class="key-row">
+            <input type="text" class="text-input" id="geminiKeyInput" placeholder="Paste your Gemini API key">
+            <button type="button" class="count-btn" id="btnPasteGeminiKey" aria-label="Paste from clipboard" title="Paste from clipboard">📋</button>
+          </div>
         </label>
-        <div style="display:flex; gap:10px; margin-top:10px;">
-          <button type="button" class="btn btn--primary" id="btnSaveGeminiKey" style="flex:1;">Save Key</button>
-          <button type="button" class="btn btn--outline" id="btnClearGeminiKey" style="flex:1;">Remove</button>
-        </div>
+        <button type="button" class="btn btn--primary btn--block" id="btnAddGeminiKey" style="margin-top:8px;">+ Add Key</button>
+
+        <div id="geminiKeyList" style="margin-top:12px; display:flex; flex-direction:column; gap:8px;"></div>
         <p class="screen-sub" id="geminiKeyStatus" style="margin-top:8px;"></p>
       </div>
 
