@@ -11,7 +11,7 @@ Vanilla JS PWA — no build step, no framework. See [DESIGN.md](DESIGN.md) for t
 3. Gemini reads the source material and generates a structured exam.
 4. **Take the exam** — objective questions (Multiple Choice, True/False, Identification, Calculation) are graded instantly in the browser; Essay answers get AI-written feedback and a score.
 
-The frontend never talks to Gemini directly — it calls a Supabase Edge Function, which holds the Gemini API key as a server-side secret.
+The frontend never talks to Gemini directly — it calls a Supabase Edge Function, which forwards the request to Gemini using the caller's own API key (BYOK — see step 3). The key passes through the Edge Function on each request; Supabase does not store it.
 
 ## Setup
 
@@ -25,11 +25,7 @@ npx serve .
 
 Edit `config.js` and fill in your Supabase project's URL and anon key (Project Settings → API in the Supabase dashboard — same project you can reuse from another app, or a new one). This file is safe to commit; the anon key is meant to be public.
 
-### 2. Get a free Gemini API key
-
-Create one at [Google AI Studio](https://aistudio.google.com/apikey). Free tier is sufficient for personal use.
-
-### 3. Deploy the Edge Functions
+### 2. Deploy the Edge Functions
 
 Requires the [Supabase CLI](https://supabase.com/docs/guides/cli).
 
@@ -38,13 +34,14 @@ supabase login
 supabase link --project-ref your-project-ref
 supabase functions deploy generate-quiz
 supabase functions deploy grade-essay
-supabase secrets set GEMINI_API_KEY=your-gemini-api-key
 ```
 
-That's it — the app calls `generate-quiz` and `grade-essay` directly via `fetch`, using your Supabase project's anon key; the Gemini key itself only ever lives in Supabase's secret store.
+### 3. Add your Gemini API key (BYOK)
+
+Every user brings their own key — there's no shared server-side key. In the app, go to **Profile → Your Gemini API Key**, paste a free key from [Google AI Studio](https://aistudio.google.com/apikey), and save. The key is stored only in that browser's `localStorage` and sent along with each `generate-quiz`/`grade-essay` request; AI Generate and essay grading are disabled until a key is saved. Manual Build and Auto-Extract don't need a key at all — see below.
 
 ## Notes
 
 - No exam persistence yet — generated exams and results live only in memory for the current page load. The Home and Library screens currently show static placeholder data (recent exams, stats, saved library entries) — real persistence would need a Supabase table.
-- One shared Gemini key means usage is bounded by your own free-tier quota, since there's no per-user key entry (BYOK) in this build.
+- Besides AI Generate, the Create screen has two AI-free modes: **Manual Build** (hand-author every question) and **Auto-Extract** (local heuristics turn pasted text into fill-in-the-blank questions, no network call). Both skip the Gemini key requirement entirely.
 - Camera capture uses `getUserMedia`, which requires a secure context (HTTPS, or `localhost`). It won't work over a plain `http://` LAN IP on a phone — use Upload Document there instead, which still lets you pick "Take Photo" from the native picker.

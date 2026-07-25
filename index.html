@@ -163,6 +163,7 @@
           </div>
         </div>
 
+        <p class="empty-note" id="sourceEmptyNote" hidden></p>
         <button type="button" class="btn btn--primary btn--block" id="btnContinueToConfigure" disabled>Continue to Configuration</button>
       </div>
 
@@ -320,6 +321,20 @@
           <h2 class="screen-title">Operator</h2>
           <p class="screen-sub">QuizForge account</p>
         </div>
+      </div>
+
+      <div class="card">
+        <p class="section-heading">Your Gemini API Key</p>
+        <p class="screen-sub" style="margin-top:6px;">Required for AI Generate and essay grading. Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Stored only in this browser — used only for your own quiz requests.</p>
+        <label class="field-block" style="margin-top:10px;">
+          <span class="field-label">API Key</span>
+          <input type="text" class="text-input" id="geminiKeyInput" placeholder="Paste your Gemini API key">
+        </label>
+        <div style="display:flex; gap:10px; margin-top:10px;">
+          <button type="button" class="btn btn--primary" id="btnSaveGeminiKey" style="flex:1;">Save Key</button>
+          <button type="button" class="btn btn--outline" id="btnClearGeminiKey" style="flex:1;">Remove</button>
+        </div>
+        <p class="screen-sub" id="geminiKeyStatus" style="margin-top:8px;"></p>
       </div>
 
       <div class="card">

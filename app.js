@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.0.1';
+const APP_VERSION = 'QF_SYS_V.1.0.2';
 
 /* ============ State ============ */
 
@@ -25,6 +25,7 @@ const state = {
   libraryTab: 'completed',
   librarySearch: '',
   cameraStream: null,
+  geminiApiKey: localStorage.getItem('quizforge-gemini-key') || '',
 };
 
 const QUESTION_TYPES = [
@@ -111,6 +112,35 @@ $('themeToggle').addEventListener('change', (event) => {
   localStorage.setItem('quizforge-theme', next);
   applyTheme(next);
   updateThemeLabel(next);
+});
+
+/* ============ Gemini API key (BYOK) ============ */
+
+function refreshGeminiKeyStatus() {
+  $('geminiKeyInput').value = state.geminiApiKey;
+  $('geminiKeyStatus').textContent = state.geminiApiKey
+    ? 'Key saved in this browser.'
+    : 'No key saved yet — AI Generate and essay grading are disabled until you add one.';
+}
+
+function onGeminiKeyChanged() {
+  refreshGeminiKeyStatus();
+  updateContinueGating();
+  if (state.createStep === 'configure') updateGenerateGating();
+}
+
+$('btnSaveGeminiKey').addEventListener('click', () => {
+  const key = $('geminiKeyInput').value.trim();
+  if (!key) return;
+  state.geminiApiKey = key;
+  localStorage.setItem('quizforge-gemini-key', key);
+  onGeminiKeyChanged();
+});
+
+$('btnClearGeminiKey').addEventListener('click', () => {
+  state.geminiApiKey = '';
+  localStorage.removeItem('quizforge-gemini-key');
+  onGeminiKeyChanged();
 });
 
 /* ============ Navigation ============ */
@@ -316,7 +346,11 @@ function renderSourcePreview() {
 
 function updateContinueGating() {
   const hasSource = state.sourceImages.length > 0 || state.sourceText.trim().length > 0;
-  const ok = state.generationMode === 'manual' ? true : hasSource;
+  const missingKey = state.generationMode === 'ai' && !state.geminiApiKey;
+  const note = $('sourceEmptyNote');
+  note.hidden = !missingKey;
+  if (missingKey) note.textContent = 'Add your Gemini API key in Profile to use AI Generate.';
+  const ok = state.generationMode === 'manual' ? true : (hasSource && !missingKey);
   $('btnContinueToConfigure').disabled = !ok;
 }
 
@@ -439,13 +473,16 @@ function updateGenerateGating() {
   }
   const selectedCount = Object.values(state.config.types).filter(Boolean).length;
   const hasSource = state.sourceImages.length > 0 || state.sourceText.trim().length > 0;
-  const canGenerate = selectedCount > 0 && hasSource;
+  const missingKey = !state.geminiApiKey;
+  const canGenerate = selectedCount > 0 && hasSource && !missingKey;
   $('btnGenerateExam').disabled = !canGenerate;
   if (canGenerate) {
     note.hidden = true;
   } else {
     note.hidden = false;
-    note.textContent = selectedCount === 0 ? 'Pick at least one question type.' : 'Add source material on the previous screen first.';
+    note.textContent = missingKey
+      ? 'Add your Gemini API key in Profile to use AI Generate.'
+      : selectedCount === 0 ? 'Pick at least one question type.' : 'Add source material on the previous screen first.';
   }
 }
 
@@ -513,6 +550,7 @@ async function runGeneration() {
       questionTypes: typesToList(state.config.types),
       difficulty: state.config.difficulty,
       count: state.config.count,
+      geminiApiKey: state.geminiApiKey,
     });
 
     if (!data?.questions?.length) throw new Error('The AI did not return any questions. Try again with clearer source material.');
@@ -848,6 +886,7 @@ async function renderResults() {
           expectedAnswer: q.expectedAnswer,
           rubric: q.rubric,
           answer: state.answers[q.id],
+          geminiApiKey: state.geminiApiKey,
         });
         state.essayGrades[q.id] = result;
       } catch (err) {
@@ -864,6 +903,7 @@ $('btnCreateAnother').addEventListener('click', resetCreateFlow);
 /* ============ Init ============ */
 
 initTheme();
+refreshGeminiKeyStatus();
 renderHome();
 resetCreateFlow();
 document.querySelector('.app-header-version').textContent = APP_VERSION;

@@ -1,7 +1,6 @@
 import { handleOptions, jsonResponse } from '../_shared/cors.ts'
 
 const GEMINI_MODEL = 'gemini-2.0-flash'
-const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')
 
 const TYPE_GUIDE: Record<string, string> = {
   multipleChoice: 'multipleChoice: provide exactly 4 plausible "choices" and set "correctAnswer" to the text of the correct choice (must match one entry in "choices" exactly).',
@@ -21,10 +20,6 @@ Deno.serve(async (req) => {
   const preflight = handleOptions(req)
   if (preflight) return preflight
 
-  if (!GEMINI_API_KEY) {
-    return jsonResponse({ message: 'GEMINI_API_KEY is not configured on the server.' }, 500)
-  }
-
   try {
     const body = await req.json()
     const {
@@ -35,8 +30,12 @@ Deno.serve(async (req) => {
       questionTypes = [],
       difficulty = 'medium',
       count = 10,
+      geminiApiKey = '',
     } = body
 
+    if (!geminiApiKey.trim()) {
+      return jsonResponse({ message: 'Add your Gemini API key in Profile before generating a quiz.' }, 400)
+    }
     if (!Array.isArray(questionTypes) || questionTypes.length === 0) {
       return jsonResponse({ message: 'Select at least one question type.' }, 400)
     }
@@ -98,7 +97,7 @@ Deno.serve(async (req) => {
     }
 
     const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiApiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
