@@ -1,6 +1,6 @@
 import { handleOptions, jsonResponse } from '../_shared/cors.ts'
 
-const GEMINI_MODEL = 'gemini-2.0-flash'
+const GEMINI_MODEL = 'gemini-3.1-flash-lite'
 
 const TYPE_GUIDE: Record<string, string> = {
   multipleChoice: 'multipleChoice: provide exactly 4 plausible "choices" and set "correctAnswer" to the text of the correct choice (must match one entry in "choices" exactly).',

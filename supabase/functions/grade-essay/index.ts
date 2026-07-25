@@ -1,6 +1,6 @@
 import { handleOptions, jsonResponse } from '../_shared/cors.ts'
 
-const GEMINI_MODEL = 'gemini-2.0-flash'
+const GEMINI_MODEL = 'gemini-3.1-flash-lite'
 
 Deno.serve(async (req) => {
   const preflight = handleOptions(req)
