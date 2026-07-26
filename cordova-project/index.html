@@ -21,11 +21,9 @@
     <button type="button" class="app-header-back" id="btnHeaderBack" aria-label="Go back" hidden>
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
     </button>
-    <h1 class="app-header-title">QuizForge <span class="app-header-version" id="appHeaderVersion"></span></h1>
-    <div class="app-header-controls">
-      <button class="btn btn-icon" id="versionButton" aria-label="Show version info">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-      </button>
+    <h1 class="app-header-title">QuizForge <span class="app-header-version"></span></h1>
+    <div class="app-header-avatar" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" /></svg>
     </div>
   </header>
 
@@ -272,15 +270,6 @@
           <span class="question-type-tag" id="questionTypeTag"></span>
           <p class="question-prompt" id="questionPrompt"></p>
           <div id="questionAnswerArea"></div>
-          
-          <!-- Toggle for showing correct answers -->
-          <div class="quiz-toggle-container">
-            <label class="toggle-switch">
-              <input type="checkbox" id="showCorrectAnswersToggle">
-              <span class="slider"></span>
-            </label>
-            <span class="toggle-label">Show correct answer on wrong answers</span>
-          </div>
         </div>
 
         <div class="quiz-runner-nav">
@@ -298,11 +287,7 @@
 
         <div class="results-list" id="resultsList"></div>
 
-        <button type="button" class="btn btn--outline btn--block" id="btnRepeatQuiz">Repeat Quiz (Shuffled)</button>
         <button type="button" class="btn btn--primary btn--block" id="btnCreateAnother">Create another exam</button>
-        
-        <!-- New draft saving button -->
-        <button type="button" class="btn btn--secondary btn--block" id="btnSaveAsDraft">Save as Draft</button>
       </div>
     </section>
 

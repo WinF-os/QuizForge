@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.0.6';
+const APP_VERSION = 'QF_SYS_V.1.0.4';
 
 /* ============ State ============ */
 
@@ -85,38 +85,6 @@ function fileToDataUrl(file) {
 
 function getSystemTheme() {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
-// Fisher-Yates shuffle algorithm
-function shuffleArray(array) {
-  const newArray = [...array];
-  for (let i = newArray.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
-  }
-  return newArray;
-}
-
-// Save quiz to library
-function saveQuizToLibrary() {
-  if (!state.quiz || !state.examTitle) return;
-  
-  // Create a library entry from the current quiz
-  const newExam = {
-    subject: state.subject || 'General',
-    title: state.examTitle,
-    questionCount: state.quiz.questions ? state.quiz.questions.length : 0,
-    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-    excerpt: state.quiz.questions && state.quiz.questions[0] ? 
-      (state.quiz.questions[0].prompt || 'Exam generated from uploaded material') : 
-      'Exam generated from uploaded material',
-    status: 'completed',
-    badge: state.quiz.questions ? state.quiz.questions.length.toString() : '0',
-    tag: state.subject ? state.subject.toLowerCase().replace(/\s+/g, '-') : 'general'
-  };
-  
-  // Add to the library exams list
-  LIBRARY_EXAMS.unshift(newExam);
 }
 
 function applyTheme(theme) {
@@ -992,30 +960,6 @@ async function renderResults() {
   paintScore();
   paintList();
 
-  // Add repeat quiz button functionality
-  $('btnRepeatQuiz').addEventListener('click', () => {
-    if (state.quiz && state.quiz.questions) {
-      // Shuffle the questions
-      const shuffledQuestions = shuffleArray(state.quiz.questions);
-      
-      // Create a new quiz object with shuffled questions
-      const newQuiz = {
-        ...state.quiz,
-        questions: shuffledQuestions
-      };
-      
-      // Reset state for new quiz
-      state.quiz = newQuiz;
-      state.answers = {};
-      state.essayGrades = {};
-      state.quizIndex = 0;
-      
-      // Render the first question of the shuffled quiz
-      renderQuizQuestion();
-      showCreateStep('quiz');
-    }
-  });
-
   const ungraded = essayQuestions.filter((q) => !state.essayGrades[q.id] && String(state.answers[q.id] || '').trim());
   if (ungraded.length) {
     await Promise.all(ungraded.map(async (q) => {
@@ -1046,208 +990,8 @@ renderHome();
 resetCreateFlow();
 document.querySelector('.app-header-version').textContent = APP_VERSION;
 
-// Save quiz to library function (added at end)
-function saveQuizToLibrary() {
-  if (!state.quiz || !state.examTitle) return;
-  
-  // Create a library entry from the current quiz
-  const newExam = {
-    subject: state.subject || 'General',
-    title: state.examTitle,
-    questionCount: state.quiz.questions ? state.quiz.questions.length : 0,
-    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-    excerpt: state.quiz.questions && state.quiz.questions[0] ? 
-      (state.quiz.questions[0].prompt || 'Exam generated from uploaded material') : 
-      'Exam generated from uploaded material',
-    status: 'completed',
-    badge: state.quiz.questions ? state.quiz.questions.length.toString() : '0',
-    tag: state.subject ? state.subject.toLowerCase().replace(/\s+/g, '-') : 'general'
-  };
-  
-  // Add to the library exams list
-  LIBRARY_EXAMS.unshift(newExam);
-}
-
-// Create a new quiz in draft mode
-function saveAsDraft() {
-  if (!state.quiz || !state.examTitle) return;
-  
-  const newExam = {
-    subject: state.subject || 'General',
-    title: state.examTitle,
-    questionCount: state.quiz.questions ? state.quiz.questions.length : 0,
-    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-    excerpt: state.quiz.questions && state.quiz.questions[0] ? 
-      (state.quiz.questions[0].prompt || 'Exam generated from uploaded material') : 
-      'Exam generated from uploaded material',
-    status: 'draft',
-    badge: state.quiz.questions ? state.quiz.questions.length.toString() : '0',
-    tag: state.subject ? state.subject.toLowerCase().replace(/\s+/g, '-') : 'general',
-    history: [],
-    isDraft: true,
-    // Store the quiz data for drafts
-    quizData: state.quiz,
-    examTitle: state.examTitle,
-    subject: state.subject
-  };
-  
-  LIBRARY_EXAMS.unshift(newExam);
-}
-
-// Add a score to quiz history
-function addScoreToHistory(examTitle, score, date) {
-  const exam = LIBRARY_EXAMS.find(e => e.title === examTitle);
-  if (exam && exam.history) {
-    exam.history.push({
-      score: score,
-      date: date || new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    });
-    // Keep only last 10 attempts
-    exam.history = exam.history.slice(-10);
-  }
-}
-
-// Show correct answer toggle functionality
-function setupAnswerToggle() {
-  // This will be called when quiz starts
-  if (typeof state.showCorrectAnswers === 'undefined') {
-    state.showCorrectAnswers = false;
-  }
-}
-
-// Save quiz to library as draft
-function saveAsDraft() {
-  if (!state.quiz || !state.examTitle) return;
-  
-  const newExam = {
-    subject: state.subject || 'General',
-    title: state.examTitle,
-    questionCount: state.quiz.questions ? state.quiz.questions.length : 0,
-    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-    excerpt: state.quiz.questions && state.quiz.questions[0] ? 
-      (state.quiz.questions[0].prompt || 'Exam generated from uploaded material') : 
-      'Exam generated from uploaded material',
-    status: 'draft',
-    badge: state.quiz.questions ? state.quiz.questions.length.toString() : '0',
-    tag: state.subject ? state.subject.toLowerCase().replace(/\s+/g, '-') : 'general',
-    history: [],
-    isDraft: true,
-    // Store the quiz data for drafts
-    quizData: state.quiz,
-    examTitle: state.examTitle,
-    subject: state.subject
-  };
-  
-  LIBRARY_EXAMS.unshift(newExam);
-}
-
-// Auto-save draft when user navigates away from quiz
-function setupAutoSave() {
-  // Prevent refresh during quiz
-  window.addEventListener('beforeunload', function(e) {
-    if (state.quiz && state.examTitle && !state.isQuizComplete) {
-      saveAsDraft();
-      // Show confirmation message
-      e.preventDefault();
-      e.returnValue = '';
-      return '';
-    }
-  });
-}
-
-// Show version popup
-function showVersionPopup() {
-  // Create version popup if it doesn't exist
-  let popup = document.getElementById('versionPopup');
-  
-  if (!popup) {
-    const popupHTML = `
-      <div class="version-popup" id="versionPopup">
-        <div class="version-popup-content">
-          <div class="version-popup-header">
-            <h2 class="version-popup-title">QuizForge</h2>
-            <span class="version-popup-version">v1.0.6</span>
-          </div>
-          <p>Version 1.0.6 is now available with enhanced features including repeat quiz, drafts, and history tracking.</p>
-          <p>Automatic updates are currently <strong id="autoUpdateStatus">enabled</strong>.</p>
-          <div class="version-popup-actions">
-            <label class="toggle-switch">
-              <input type="checkbox" id="autoUpdateToggle" checked>
-              <span class="slider"></span>
-            </label>
-            <span class="toggle-label">Auto-update</span>
-            <button class="update-btn" id="updateButton">Update Now</button>
-          </div>
-        </div>
-      </div>
-    `;
-    
-    document.body.insertAdjacentHTML('beforeend', popupHTML);
-    popup = document.getElementById('versionPopup');
-    
-    // Add event listeners
-    const updateButton = document.getElementById('updateButton');
-    const autoUpdateToggle = document.getElementById('autoUpdateToggle');
-    
-    if (updateButton) {
-      updateButton.addEventListener('click', () => {
-        alert('Update functionality would be implemented here in a real application');
-        popup.classList.remove('is-visible');
-      });
-    }
-    
-    if (autoUpdateToggle) {
-      autoUpdateToggle.addEventListener('change', function() {
-        const statusElement = document.getElementById('autoUpdateStatus');
-        if (statusElement) {
-          statusElement.textContent = this.checked ? 'enabled' : 'disabled';
-        }
-      });
-    }
-  }
-  
-  // Show the popup
-  popup.classList.add('is-visible');
-  
-  // Close when clicking outside
-  popup.addEventListener('click', function(e) {
-    if (e.target === popup) {
-      popup.classList.remove('is-visible');
-    }
-  });
-}
-
-/* ============ Init ============ */
-
-initTheme();
-refreshGeminiKey();
-renderHome();
-resetCreateStep();
-document.getElementById('appHeaderVersion').textContent = APP_VERSION;
-
-// Add version button listener
-const versionButton = document.getElementById('versionButton');
-if (versionButton) {
-  versionButton.addEventListener('click', showVersionPopup);
-}
-
-// Setup auto-save functionality
-setupAutoSave();
-
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(error => {
-      console.error('Service worker registration failed:', error);
-    });
-  });
-}
-
-// Auto-save draft when user navigates away from quiz
-function setupAutoSave() {
-  // Prevent refresh during quiz
-  window.addEventListener('beforeunload', function(e) {
-    if (state.quiz && state.examTitle && !state.isQuizComplete) {
-      saveAsDraft();
-    }
+    navigator.serviceWorker.register('sw.js').catch(() => {});
   });
 }
