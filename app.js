@@ -1251,3 +1251,45 @@ function setupAutoSave() {
     }
   });
 }
+
+// Add version popup functionality
+document.addEventListener('DOMContentLoaded', function() {
+  const versionButton = document.getElementById('versionButton');
+  if (versionButton) {
+    versionButton.addEventListener('click', function() {
+      // Create a simple alert with version info
+      alert(`QuizForge Version: ${APP_VERSION}\n\nFeatures included:\n- Repeat Quiz (Shuffled)\n- Save as Draft\n- Correct Answer Toggle\n- Library History Tracking`);
+    });
+  }
+});
+
+// Show correct answer on wrong answers functionality
+function showCorrectAnswerOnWrong() {
+  // This function is integrated into renderQuizQuestion now
+}
+
+// Add the save functionality to results screen
+$('btnSaveAsDraft').addEventListener('click', () => {
+  const savedExam = saveAsDraft();
+  if (savedExam) {
+    alert('Exam saved as draft! You can find it in your library.');
+    switchTab('library');
+  }
+});
+
+// Start a quiz from library item
+function startQuizFromLibrary(item) {
+  if (!item || !item.quizData) return;
+  
+  // Set the state to use this quiz data
+  state.quiz = {
+    questions: item.quizData.questions || []
+  };
+  state.subject = item.quizData.subject;
+  state.examTitle = item.quizData.examTitle;
+  state.isQuizComplete = false;
+  
+  // Show the quiz interface
+  switchTab('quiz');
+  renderQuiz();
+}
