@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.0.6';
+const APP_VERSION = 'QF_SYS_V.1.0.61';
 
 /* ============ State ============ */
 
