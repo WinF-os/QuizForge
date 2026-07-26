@@ -1,6 +1,6 @@
 {
   "name": "QuizForge",
-  "version": "1.0.61",
+  "version": "1.0.62",
   "description": "Turn a photo of your notes into an AI-generated interactive exam",
   "main": "index.html",
   "scripts": {
