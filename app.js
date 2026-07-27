@@ -29,6 +29,7 @@ const state = {
   activeKeyIndex: 0,
   showCorrectAnswers: false,
   currentLibraryId: null, // library entry (if any) the in-progress quiz was resumed/reviewed from -- lets a re-save update it instead of always inserting a duplicate
+  legibilityCheckPending: false, // true while an uploaded/captured image is being checked (or its warning modal is open) -- see checkAddedImagesLegibility()
 };
 
 const QUESTION_TYPES = [
@@ -446,6 +447,7 @@ $('fileInput').addEventListener('change', async (event) => {
   event.target.value = '';
   renderSourcePreview();
   updateContinueGating();
+  checkAddedImagesLegibility(loaded);
 });
 
 $('btnPasteText').addEventListener('click', () => {
@@ -479,7 +481,7 @@ function updateContinueGating() {
   note.hidden = !missingKey;
   if (missingKey) note.textContent = 'Add your Gemini API key in Profile to use AI Generate.';
   const ok = state.generationMode === 'manual' ? true : (hasSource && !missingKey);
-  $('btnContinueToConfigure').disabled = !ok;
+  $('btnContinueToConfigure').disabled = !ok || state.legibilityCheckPending;
 }
 
 $('btnContinueToConfigure').addEventListener('click', () => {
@@ -527,11 +529,72 @@ $('btnCameraShutter').addEventListener('click', () => {
   canvas.height = video.videoHeight;
   canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
   const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-  state.sourceImages.push({ dataUrl, mimeType: 'image/jpeg' });
+  const capturedImage = { dataUrl, mimeType: 'image/jpeg' };
+  state.sourceImages.push(capturedImage);
   closeCamera();
   renderSourcePreview();
   updateContinueGating();
+  checkAddedImagesLegibility([capturedImage]);
 });
+
+/* ============ Image legibility check ============ */
+
+async function checkImageLegibility(image) {
+  return callWithKeyRotation('check-image-legibility', { dataUrl: image.dataUrl, mimeType: image.mimeType });
+}
+
+function showLegibilityModal(image, reason) {
+  return new Promise((resolve) => {
+    $('legibilityModalThumb').src = image.dataUrl;
+    $('legibilityModalReason').textContent = reason || 'This image may be too unclear to generate accurate questions from.';
+    $('legibilityModal').hidden = false;
+
+    function onReupload() { cleanup('reupload'); }
+    function onIgnore() { cleanup('ignore'); }
+    function cleanup(result) {
+      $('legibilityModal').hidden = true;
+      $('btnLegibilityReupload').removeEventListener('click', onReupload);
+      $('btnLegibilityIgnore').removeEventListener('click', onIgnore);
+      resolve(result);
+    }
+    $('btnLegibilityReupload').addEventListener('click', onReupload);
+    $('btnLegibilityIgnore').addEventListener('click', onIgnore);
+  });
+}
+
+// Checks each newly-added source image in turn against Gemini, pausing
+// (Continue to Configuration stays disabled -- see updateContinueGating)
+// while a check is running or its warning modal is open, until the user
+// removes the flagged image or explicitly ignores the warning. If the
+// check itself can't run (no Gemini key yet, offline, API error), it fails
+// open -- silently skips checking that image rather than blocking the user
+// over a problem unrelated to the image's actual legibility.
+async function checkAddedImagesLegibility(images) {
+  if (!state.geminiApiKeys.length) return;
+  for (const image of images) {
+    if (!state.sourceImages.includes(image)) continue; // already removed by the user while an earlier check in this batch was running
+    state.legibilityCheckPending = true;
+    $('legibilityCheckingNote').hidden = false;
+    updateContinueGating();
+
+    let result = null;
+    try {
+      result = await checkImageLegibility(image);
+    } catch (e) { /* couldn't verify -- not the image's fault, let it through */ }
+
+    $('legibilityCheckingNote').hidden = true;
+    if (result && !result.legible) {
+      const choice = await showLegibilityModal(image, result.reason);
+      if (choice === 'reupload') {
+        const idx = state.sourceImages.indexOf(image);
+        if (idx !== -1) state.sourceImages.splice(idx, 1);
+        renderSourcePreview();
+      }
+    }
+    state.legibilityCheckPending = false;
+    updateContinueGating();
+  }
+}
 
 /* ============ Create: configure step ============ */
 
@@ -1250,12 +1313,13 @@ async function showVersionPopup() {
     updateBtn.hidden = false;
     if (isAutoUpdateEnabled()) applyUpdate();
   }
+  refreshUpdateBadge();
 }
 
 // Background check on load (not just when the popup is opened), same
 // convention as Winfinity's own "check ~5s after load" behavior -- lets
 // auto-update actually apply without the user ever opening the popup.
-setTimeout(() => { checkForUpdate().then((v) => { if (v && v !== APP_VERSION && isAutoUpdateEnabled()) applyUpdate(); }); }, 5000);
+setTimeout(() => { checkForUpdate().then((v) => { refreshUpdateBadge(); if (v && v !== APP_VERSION && isAutoUpdateEnabled()) applyUpdate(); }); }, 5000);
 
 // Version button -> the real popup (checkForUpdate/applyUpdate above),
 // replacing the old placeholder alert entirely. initTheme/renderHome/etc.
@@ -1263,6 +1327,46 @@ setTimeout(() => { checkForUpdate().then((v) => { if (v && v !== APP_VERSION && 
 // deliberately NOT repeated here.
 const versionButton = document.getElementById('versionButton');
 if (versionButton) versionButton.addEventListener('click', showVersionPopup);
+
+// Profile-tab update control -- same real checkForUpdate()/applyUpdate()
+// as the header popup above (not a separate implementation), just a second
+// place to reach it plus a small notification badge that lights up
+// whenever a background or manual check has found a newer version, same
+// idea as Winfinity's own Profile-tab update button/badge.
+function refreshUpdateBadge() {
+  const hasUpdate = !!(latestKnownVersion && latestKnownVersion !== APP_VERSION);
+  const badge = document.getElementById('profileUpdateBadge');
+  if (badge) badge.hidden = !hasUpdate;
+  const btn = document.getElementById('btnProfileCheckUpdate');
+  if (btn) btn.textContent = hasUpdate ? 'Update Now' : 'Check for Updates';
+}
+
+document.getElementById('profileVersionText').textContent = APP_VERSION;
+
+document.getElementById('btnProfileCheckUpdate').addEventListener('click', async () => {
+  const btn = document.getElementById('btnProfileCheckUpdate');
+  const status = document.getElementById('profileUpdateStatus');
+
+  if (latestKnownVersion && latestKnownVersion !== APP_VERSION) {
+    applyUpdate();
+    return;
+  }
+
+  btn.disabled = true;
+  status.textContent = 'Checking for updates…';
+  const remoteVersion = await checkForUpdate();
+  btn.disabled = false;
+  refreshUpdateBadge();
+
+  if (!remoteVersion) {
+    status.textContent = "Could not check for updates -- you're offline, or the live site is unreachable.";
+  } else if (remoteVersion === APP_VERSION) {
+    status.textContent = "You're on the latest version.";
+  } else {
+    status.textContent = `A new version is available: ${esc(remoteVersion)}. Tap Update Now to install it.`;
+    if (isAutoUpdateEnabled()) applyUpdate();
+  }
+});
 
 setupAutoSave();
 

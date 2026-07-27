@@ -504,6 +504,69 @@ textarea.text-input { resize: vertical; font-family: inherit; }
   cursor: not-allowed;
 }
 
+.update-badge {
+  display: inline-block;
+  margin-top: var(--space-2);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--color-danger);
+  color: #fff;
+}
+
+/* Legibility check modal -- blocks continuing with a source image Gemini
+   flagged as hard to read, until the user reuploads or ignores it. Uses the
+   app's real design tokens (unlike .version-popup above, which hardcodes
+   colors and doesn't adapt to dark mode) so it looks correct in both themes. */
+.legibility-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: var(--space-4);
+}
+.legibility-modal-content {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-5);
+  max-width: 380px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.legibility-modal-thumb {
+  width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+.legibility-modal-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.legibility-modal-reason {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+.legibility-modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 .toggle-switch {
   position: relative;
   display: inline-block;

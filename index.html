@@ -146,6 +146,7 @@
         </div>
 
         <div class="source-preview-row" id="sourcePreviewRow" hidden></div>
+        <p class="empty-note" id="legibilityCheckingNote" hidden>Checking image quality…</p>
 
         <label class="field-block" id="pasteTextBlock" hidden>
           <span class="field-label">Pasted content</span>
@@ -370,13 +371,21 @@
       </div>
 
       <div class="card">
+        <p class="section-heading">Updates</p>
+        <p class="screen-sub" style="margin-top:6px;">You're on <span id="profileVersionText"></span>.</p>
+        <span class="update-badge" id="profileUpdateBadge" hidden>Update available</span>
+        <button type="button" class="btn btn--outline btn--block" id="btnProfileCheckUpdate" style="margin-top:8px;">Check for Updates</button>
+        <p class="screen-sub" id="profileUpdateStatus" style="margin-top:6px;"></p>
+      </div>
+
+      <div class="card">
         <p class="section-heading">About this app</p>
         <p class="screen-sub" style="margin-top:8px;">QuizForge turns a photo of your notes or textbook pages into a ready-to-take exam using Google Gemini. Question generation runs through a Supabase Edge Function so the AI key stays off your device. Prefer not to use AI? Manual Build and Auto-Extract on the Create screen work fully offline of Gemini.</p>
       </div>
 
       <div class="card">
         <p class="section-heading">Data</p>
-        <p class="screen-sub" style="margin-top:8px;">Generated exams currently live only in this browser session. Saved exam history is on the roadmap.</p>
+        <p class="screen-sub" style="margin-top:8px;">Your exam library (completed exams and drafts) is saved in this browser's storage and stays there across visits — see the Library tab. Clearing your browser data will remove it.</p>
       </div>
     </section>
 
@@ -414,6 +423,21 @@
     <div class="camera-controls">
       <button type="button" class="camera-shutter-btn" id="btnCameraShutter" aria-label="Take photo" disabled></button>
       <p class="camera-hint">Frame the page so the text is flat and well lit, then tap to capture.</p>
+    </div>
+  </div>
+
+  <!-- Shown while a just-added source image is being checked for legibility,
+       and as a blocking modal if it fails that check -- see
+       checkAddedImagesLegibility() in app.js. -->
+  <div class="legibility-modal" id="legibilityModal" hidden>
+    <div class="legibility-modal-content">
+      <img class="legibility-modal-thumb" id="legibilityModalThumb" alt="Image that may be hard to read">
+      <h3 class="legibility-modal-title">This image might be hard to read</h3>
+      <p class="legibility-modal-reason" id="legibilityModalReason"></p>
+      <div class="legibility-modal-actions">
+        <button type="button" class="btn btn--outline btn--block" id="btnLegibilityReupload">Remove &amp; Reupload</button>
+        <button type="button" class="btn btn--secondary btn--block" id="btnLegibilityIgnore">Ignore &amp; Continue Anyway</button>
+      </div>
     </div>
   </div>
 
