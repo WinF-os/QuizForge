@@ -43,6 +43,20 @@ supabase functions deploy check-image-legibility
 
 Every user brings their own key — there's no shared server-side key. In the app, go to **Profile → Your Gemini API Keys**. Tap **Get a Free Gemini API Key** to open Google AI Studio (auto-signs in if already logged into Gmail in that browser), create a key, copy it, then come back and either paste it or tap the clipboard button to fill it in, then **Add Key**. Keys are stored only in that browser's `localStorage`. You can add more than one (e.g. from separate Google accounts) — if a key's free quota runs out mid-use, QuizForge automatically retries with the next saved key before giving up. AI Generate and essay grading are disabled until at least one key is saved. Manual Build and Auto-Extract don't need a key at all — see below.
 
+### 4. Google Drive Backup Setup (optional)
+
+Off by default (`GOOGLE_CLIENT_ID = ''` in `config.js`) — the local phone backup under Profile → Backup & Restore works with zero setup either way. To turn on Drive backup, you need a QuizForge-specific OAuth client (Winfinity's own client ID won't work here — a client ID is tied to one app's name/branding on the consent screen):
+
+1. Go to [console.cloud.google.com](https://console.cloud.google.com/) and either pick an existing project or create a new one (top-left project dropdown → **New Project**).
+2. **APIs & Services → Library** → search **Google Drive API** → **Enable**.
+3. **APIs & Services → OAuth consent screen** → External → fill in an app name ("QuizForge"), your email as support/developer contact → **Save and Continue** through the Scopes and Test Users steps (add your own Google account under Test Users if the app stays in "Testing" mode — that's fine for personal use, no Google review needed).
+4. **APIs & Services → Credentials → + Create Credentials → OAuth client ID** → Application type: **Web application**.
+5. Under **Authorized JavaScript origins**, add every origin QuizForge is actually served from, e.g. `https://winf-os.github.io` (for the GitHub Pages deploy) and `http://localhost:3000`/whatever port you use for local testing. No path, no trailing slash — origin only.
+6. Create → copy the **Client ID** (looks like `123456789-abc...apps.googleusercontent.com`) → paste it into `config.js` as `GOOGLE_CLIENT_ID`.
+7. Reload the app — Profile → Backup & Restore should now show a **Connect Google Drive** button instead of "Not set up yet."
+
+Uses the `drive.file` scope only — QuizForge can only see/manage files it created itself (one `quizforge-backup.json`), never the rest of the connected account's Drive.
+
 ## Building the Android APK
 
 The `android/` folder is a Capacitor project pointed at `webDir: "www"` (see `capacitor.config.json`) — it bundles a snapshot of the web files *at build time* into the APK. There's no live auto-update: once installed, the app keeps running whatever was bundled until a new APK is built and reinstalled, the same as Winfinity's APKs.
