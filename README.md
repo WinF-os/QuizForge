@@ -34,14 +34,43 @@ supabase login
 supabase link --project-ref your-project-ref
 supabase functions deploy generate-quiz
 supabase functions deploy grade-essay
+supabase functions deploy check-image-legibility
 ```
+
+(In practice this project's functions have been deployed by pasting each one's `index.ts` directly into the Supabase dashboard's Edge Functions UI rather than via CLI — both work, but the dashboard's single-file editor can't resolve a relative import to `_shared/`, which is why `check-image-legibility` inlines its own CORS helper instead of importing it like the other two do.)
 
 ### 3. Add your Gemini API key (BYOK)
 
 Every user brings their own key — there's no shared server-side key. In the app, go to **Profile → Your Gemini API Keys**. Tap **Get a Free Gemini API Key** to open Google AI Studio (auto-signs in if already logged into Gmail in that browser), create a key, copy it, then come back and either paste it or tap the clipboard button to fill it in, then **Add Key**. Keys are stored only in that browser's `localStorage`. You can add more than one (e.g. from separate Google accounts) — if a key's free quota runs out mid-use, QuizForge automatically retries with the next saved key before giving up. AI Generate and essay grading are disabled until at least one key is saved. Manual Build and Auto-Extract don't need a key at all — see below.
 
+## Building the Android APK
+
+The `android/` folder is a Capacitor project pointed at `webDir: "www"` (see `capacitor.config.json`) — it bundles a snapshot of the web files *at build time* into the APK. There's no live auto-update: once installed, the app keeps running whatever was bundled until a new APK is built and reinstalled, the same as Winfinity's APKs.
+
+```
+# 1. This project has no bundler, so www/ does NOT stay in sync with the
+#    root files on its own -- copy the current source in first. Skipping
+#    this step is why an APK can get rebuilt and still show an old version.
+cp app.js index.html style.css sw.js config.js www/
+
+# 2. Sync into the native project (copies www/ -> android/)
+npx cap sync android
+
+# 3. Build (JDK 21 + the Android SDK, same toolchain as Winfinity's APKs)
+cd android
+JAVA_HOME="/path/to/jdk21" ANDROID_HOME="/path/to/android_sdk" ./gradlew.bat assembleDebug
+```
+
+Output: `android/app/build/outputs/apk/debug/app-debug.apk`. Verify before distributing — don't just trust a `BUILD SUCCESSFUL` exit code:
+
+```
+unzip -p android/app/build/outputs/apk/debug/app-debug.apk assets/public/app.js | grep APP_VERSION
+```
+
+`android/app/src/main/AndroidManifest.xml` and `MainActivity.java` hold real hand-written native code (the `CAMERA` runtime-permission request the in-app Camera Capture button needs — Android silently refuses `getUserMedia()` in the WebView without it) and are the only files under `android/` actually tracked in git; everything else there is regenerable build output.
+
 ## Notes
 
-- No exam persistence yet — generated exams and results live only in memory for the current page load. The Home and Library screens currently show static placeholder data (recent exams, stats, saved library entries) — real persistence would need a Supabase table.
+- Completed exams and drafts persist to `localStorage` and survive reloads — see the Library tab. Not synced across devices/browsers (no account system yet).
 - Besides AI Generate, the Create screen has two AI-free modes: **Manual Build** (hand-author every question) and **Auto-Extract** (local heuristics turn pasted text into fill-in-the-blank questions, no network call). Both skip the Gemini key requirement entirely.
-- Camera capture uses `getUserMedia`, which requires a secure context (HTTPS, or `localhost`). It won't work over a plain `http://` LAN IP on a phone — use Upload Document there instead, which still lets you pick "Take Photo" from the native picker.
+- Camera capture uses `getUserMedia`, which requires a secure context (HTTPS, or `localhost`) in a browser. It won't work over a plain `http://` LAN IP on a phone — use Upload Document there instead, which still lets you pick "Take Photo" from the native picker. In the packaged Android app this instead depends on the `CAMERA` permission described above.

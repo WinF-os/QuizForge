@@ -38,7 +38,7 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Was missing entirely -- the in-app Camera Capture feature uses
+    <!-- Was missing entirely: the in-app Camera Capture feature uses
          getUserMedia() in the WebView, which Android will refuse before the
          app even gets a chance to prompt the user, if this isn't declared. -->
     <uses-permission android:name="android.permission.CAMERA" />
