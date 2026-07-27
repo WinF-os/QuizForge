@@ -27,6 +27,7 @@ const state = {
   cameraStream: null,
   geminiApiKeys: loadGeminiKeys(),
   activeKeyIndex: 0,
+  showCorrectAnswers: false,
 };
 
 const QUESTION_TYPES = [
@@ -900,6 +901,22 @@ function renderQuizQuestion() {
 
   $('btnQuizPrev').disabled = state.quizIndex === 0;
   $('btnQuizNext').textContent = state.quizIndex < total - 1 ? 'Next' : 'Finish exam';
+
+  // "Show correct answer on wrong answers" -- the checkbox already existed
+  // in index.html and the state flag was already initialized, but nothing
+  // ever actually read either of them here. Keep the checkbox in sync with
+  // state across question navigation, then show the correct answer inline
+  // only for an objective question the user has actually answered wrong.
+  const toggle = $('showCorrectAnswersToggle');
+  toggle.checked = !!state.showCorrectAnswers;
+  const existingNote = area.parentNode.querySelector('.correct-answer-note');
+  if (existingNote) existingNote.remove();
+  if (state.showCorrectAnswers && answer !== undefined && isObjectiveType(question.type) && !gradeObjectiveQuestion(question, answer)) {
+    const note = document.createElement('p');
+    note.className = 'result-answer correct-answer-note';
+    note.innerHTML = `<strong>Correct answer:</strong> ${esc(question.correctAnswer)}`;
+    area.parentNode.appendChild(note);
+  }
 }
 
 $('btnQuizPrev').addEventListener('click', () => {
@@ -913,6 +930,20 @@ $('btnQuizNext').addEventListener('click', () => {
     renderResults();
     showCreateStep('results');
   }
+});
+
+// Attached once here (not inside renderResults(), which runs every time the
+// results screen is shown -- including after every repeat) so repeating a
+// quiz multiple times in one session doesn't stack up duplicate listeners
+// that each re-fire the shuffle-and-reset on a single click.
+$('btnRepeatQuiz').addEventListener('click', () => {
+  if (!state.quiz || !state.quiz.questions) return;
+  state.quiz = { ...state.quiz, questions: shuffleArray(state.quiz.questions) };
+  state.answers = {};
+  state.essayGrades = {};
+  state.quizIndex = 0;
+  renderQuizQuestion();
+  showCreateStep('quiz');
 });
 
 /* ============ Grading ============ */
@@ -992,30 +1023,6 @@ async function renderResults() {
   paintScore();
   paintList();
 
-  // Add repeat quiz button functionality
-  $('btnRepeatQuiz').addEventListener('click', () => {
-    if (state.quiz && state.quiz.questions) {
-      // Shuffle the questions
-      const shuffledQuestions = shuffleArray(state.quiz.questions);
-      
-      // Create a new quiz object with shuffled questions
-      const newQuiz = {
-        ...state.quiz,
-        questions: shuffledQuestions
-      };
-      
-      // Reset state for new quiz
-      state.quiz = newQuiz;
-      state.answers = {};
-      state.essayGrades = {};
-      state.quizIndex = 0;
-      
-      // Render the first question of the shuffled quiz
-      renderQuizQuestion();
-      showCreateStep('quiz');
-    }
-  });
-
   const ungraded = essayQuestions.filter((q) => !state.essayGrades[q.id] && String(state.answers[q.id] || '').trim());
   if (ungraded.length) {
     await Promise.all(ungraded.map(async (q) => {
@@ -1068,17 +1075,20 @@ function saveQuizToLibrary() {
   LIBRARY_EXAMS.unshift(newExam);
 }
 
-// Create a new quiz in draft mode
+// Create a new quiz in draft mode -- returns the created exam (or undefined
+// if there was nothing to save) so callers can tell whether it actually
+// happened; a prior version of this function didn't return anything, so
+// its "if (savedExam)" call site silently never fired the success message.
 function saveAsDraft() {
-  if (!state.quiz || !state.examTitle) return;
-  
+  if (!state.quiz || !state.examTitle) return undefined;
+
   const newExam = {
     subject: state.subject || 'General',
     title: state.examTitle,
     questionCount: state.quiz.questions ? state.quiz.questions.length : 0,
     date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-    excerpt: state.quiz.questions && state.quiz.questions[0] ? 
-      (state.quiz.questions[0].prompt || 'Exam generated from uploaded material') : 
+    excerpt: state.quiz.questions && state.quiz.questions[0] ?
+      (state.quiz.questions[0].prompt || 'Exam generated from uploaded material') :
       'Exam generated from uploaded material',
     status: 'draft',
     badge: state.quiz.questions ? state.quiz.questions.length.toString() : '0',
@@ -1090,8 +1100,9 @@ function saveAsDraft() {
     examTitle: state.examTitle,
     subject: state.subject
   };
-  
+
   LIBRARY_EXAMS.unshift(newExam);
+  return newExam;
 }
 
 // Add a score to quiz history
@@ -1105,40 +1116,6 @@ function addScoreToHistory(examTitle, score, date) {
     // Keep only last 10 attempts
     exam.history = exam.history.slice(-10);
   }
-}
-
-// Show correct answer toggle functionality
-function setupAnswerToggle() {
-  // This will be called when quiz starts
-  if (typeof state.showCorrectAnswers === 'undefined') {
-    state.showCorrectAnswers = false;
-  }
-}
-
-// Save quiz to library as draft
-function saveAsDraft() {
-  if (!state.quiz || !state.examTitle) return;
-  
-  const newExam = {
-    subject: state.subject || 'General',
-    title: state.examTitle,
-    questionCount: state.quiz.questions ? state.quiz.questions.length : 0,
-    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-    excerpt: state.quiz.questions && state.quiz.questions[0] ? 
-      (state.quiz.questions[0].prompt || 'Exam generated from uploaded material') : 
-      'Exam generated from uploaded material',
-    status: 'draft',
-    badge: state.quiz.questions ? state.quiz.questions.length.toString() : '0',
-    tag: state.subject ? state.subject.toLowerCase().replace(/\s+/g, '-') : 'general',
-    history: [],
-    isDraft: true,
-    // Store the quiz data for drafts
-    quizData: state.quiz,
-    examTitle: state.examTitle,
-    subject: state.subject
-  };
-  
-  LIBRARY_EXAMS.unshift(newExam);
 }
 
 // Auto-save draft when user navigates away from quiz
@@ -1242,16 +1219,6 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// Auto-save draft when user navigates away from quiz
-function setupAutoSave() {
-  // Prevent refresh during quiz
-  window.addEventListener('beforeunload', function(e) {
-    if (state.quiz && state.examTitle && !state.isQuizComplete) {
-      saveAsDraft();
-    }
-  });
-}
-
 // Add version popup functionality
 document.addEventListener('DOMContentLoaded', function() {
   const versionButton = document.getElementById('versionButton');
@@ -1263,10 +1230,14 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 
-// Show correct answer on wrong answers functionality
-function showCorrectAnswerOnWrong() {
-  // This function is integrated into renderQuizQuestion now
-}
+// "Show correct answer on wrong answers" toggle -- the actual display
+// logic lives in renderQuizQuestion(), which re-renders on every answer/
+// navigation; this listener just needs to update the flag and re-render
+// once so the current question reflects the new setting immediately.
+$('showCorrectAnswersToggle').addEventListener('change', (e) => {
+  state.showCorrectAnswers = e.target.checked;
+  if (state.quiz) renderQuizQuestion();
+});
 
 // Add the save functionality to results screen
 $('btnSaveAsDraft').addEventListener('click', () => {
