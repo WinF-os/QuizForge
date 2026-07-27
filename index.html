@@ -202,6 +202,12 @@
           </div>
         </div>
 
+        <div class="card">
+          <p class="field-label">Time Limit (optional)</p>
+          <p class="screen-sub" style="margin-top:4px;">Starts counting down once the first question is answered. Leave blank for no limit.</p>
+          <input type="number" min="1" step="1" class="text-input" id="timeLimitInput" placeholder="Minutes (e.g. 30)" style="margin-top:8px;">
+        </div>
+
         <div class="card quote-card">
           <p>"The secret of getting ahead is getting started."</p>
         </div>
@@ -252,7 +258,15 @@
           <div class="results-list" id="manualQuestionList"></div>
         </div>
 
+        <div class="card">
+          <p class="field-label">Time Limit (optional)</p>
+          <p class="screen-sub" style="margin-top:4px;">Starts counting down once the first question is answered. Leave blank for no limit.</p>
+          <input type="number" min="1" step="1" class="text-input" id="manualTimeLimitInput" placeholder="Minutes (e.g. 30)" style="margin-top:8px;">
+        </div>
+
+        <button type="button" class="btn btn--outline btn--block" id="btnRegenerateQuiz" hidden>✨ Regenerate with AI</button>
         <button type="button" class="btn btn--primary btn--block" id="btnStartManualExam" disabled>Save Exam</button>
+        <button type="button" class="btn btn--outline btn--block" id="btnSaveAsNewCopy" hidden>Save as New Copy</button>
       </div>
 
       <div class="create-step generating-screen" id="stepGenerating" hidden>
@@ -270,12 +284,14 @@
         <div>
           <div class="quiz-header-row">
             <span id="quizExamTitle">Exam</span>
+            <span class="quiz-timer" id="quizTimer" hidden></span>
             <span class="quiz-live-score" id="quizLiveScore">0/0</span>
           </div>
           <div class="progress-track"><div class="progress-fill" id="quizProgressFill" style="width:0%"></div></div>
           <div class="quiz-runner-meta">
             <span id="quizProgressLabel">Question 1 of 1</span>
           </div>
+          <div class="quiz-nav-row" id="quizNavRow"></div>
         </div>
 
         <div class="card question-card">

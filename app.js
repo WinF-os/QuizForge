@@ -17,6 +17,7 @@ const state = {
     types: { multipleChoice: true, trueFalse: false, identification: false, calculation: false, essay: false },
     difficulty: 'medium',
     count: 10,
+    timeLimitMinutes: 0, // 0 = no limit
   },
   quiz: null,
   answers: {},
@@ -30,6 +31,7 @@ const state = {
   showCorrectAnswers: false,
   currentLibraryId: null, // library entry (if any) the in-progress quiz was resumed/reviewed from -- lets a re-save update it instead of always inserting a duplicate
   legibilityCheckPending: false, // true while an uploaded/captured image is being checked (or its warning modal is open) -- see checkAddedImagesLegibility()
+  quizTimerStartedAt: null, // set the moment the first answer is given -- not persisted across a close/reopen, see startQuizTimerIfNeeded()
 };
 
 const QUESTION_TYPES = [
@@ -398,6 +400,7 @@ function showCreateStep(step) {
   });
   $('btnHeaderBack').hidden = step === 'source';
   window.scrollTo(0, 0);
+  if (step !== 'quiz') stopQuizTimer(); // covers every way of leaving the quiz screen (finish, back, tab switch) in one place
 }
 
 $('btnHeaderBack').addEventListener('click', () => {
@@ -440,7 +443,7 @@ function resetCreateFlow() {
   state.sourceImages = [];
   state.sourceText = '';
   state.manualQuestions = [];
-  state.config = { types: { multipleChoice: true, trueFalse: false, identification: false, calculation: false, essay: false }, difficulty: 'medium', count: 10 };
+  state.config = { types: { multipleChoice: true, trueFalse: false, identification: false, calculation: false, essay: false }, difficulty: 'medium', count: 10, timeLimitMinutes: 0 };
   state.quiz = null;
   state.answers = {};
   state.essayGrades = {};
@@ -452,6 +455,10 @@ function resetCreateFlow() {
   $('pasteTextBlock').hidden = true;
   $('manualPromptInput').value = '';
   $('manualExplanationInput').value = '';
+  $('timeLimitInput').value = '';
+  $('manualTimeLimitInput').value = '';
+  $('btnRegenerateQuiz').hidden = true; // both are edit-only actions -- nothing to regenerate from or copy over for a genuinely new quiz
+  $('btnSaveAsNewCopy').hidden = true;
   renderSourcePreview();
   setGenerationMode('ai');
   renderManualBuilder();
@@ -459,8 +466,8 @@ function resetCreateFlow() {
   showCreateStep('source');
 }
 
-$('examTitleInput').addEventListener('input', (e) => { state.examTitle = e.target.value; });
-$('subjectSelect').addEventListener('change', (e) => { state.subject = e.target.value; });
+$('examTitleInput').addEventListener('input', (e) => { state.examTitle = e.target.value; updateContinueGating(); });
+$('subjectSelect').addEventListener('change', (e) => { state.subject = e.target.value; updateContinueGating(); });
 
 $('btnUploadDocument').addEventListener('click', () => $('fileInput').click());
 $('fileInput').addEventListener('change', async (event) => {
@@ -500,10 +507,18 @@ function renderSourcePreview() {
 function updateContinueGating() {
   const hasSource = state.sourceImages.length > 0 || state.sourceText.trim().length > 0;
   const missingKey = state.generationMode === 'ai' && !state.geminiApiKeys.length;
+  const missingTitleOrSubject = !state.examTitle.trim() || !state.subject;
   const note = $('sourceEmptyNote');
-  note.hidden = !missingKey;
-  if (missingKey) note.textContent = 'Add your Gemini API key in Profile to use AI Generate.';
-  const ok = state.generationMode === 'manual' ? true : (hasSource && !missingKey);
+  if (missingTitleOrSubject) {
+    note.hidden = false;
+    note.textContent = 'Enter an Exam Title and select a Subject before continuing.';
+  } else if (missingKey) {
+    note.hidden = false;
+    note.textContent = 'Add your Gemini API key in Profile to use AI Generate.';
+  } else {
+    note.hidden = true;
+  }
+  const ok = !missingTitleOrSubject && (state.generationMode === 'manual' ? true : (hasSource && !missingKey));
   $('btnContinueToConfigure').disabled = !ok || state.legibilityCheckPending;
 }
 
@@ -768,6 +783,7 @@ async function runGeneration() {
 
     if (!data?.questions?.length) throw new Error('The AI did not return any questions. Try again with clearer source material.');
 
+    data.timeLimitMinutes = Number($('timeLimitInput').value) || 0;
     state.quiz = data;
     clearInterval(generatingMessageTimer);
     saveGeneratedQuizAndReturnToLibrary();
@@ -834,7 +850,7 @@ function runAutoExtract() {
     return;
   }
 
-  state.quiz = { questions, examTitle: state.examTitle, subject: state.subject, difficulty: 'auto' };
+  state.quiz = { questions, examTitle: state.examTitle, subject: state.subject, difficulty: 'auto', timeLimitMinutes: Number($('timeLimitInput').value) || 0 };
   saveGeneratedQuizAndReturnToLibrary();
 }
 
@@ -984,11 +1000,119 @@ $('btnAddManualQuestion').addEventListener('click', () => {
 });
 
 $('btnStartManualExam').addEventListener('click', () => {
-  state.quiz = { questions: state.manualQuestions, examTitle: state.examTitle, subject: state.subject, difficulty: 'manual' };
+  state.quiz = { questions: state.manualQuestions, examTitle: state.examTitle, subject: state.subject, difficulty: 'manual', timeLimitMinutes: Number($('manualTimeLimitInput').value) || 0 };
   saveGeneratedQuizAndReturnToLibrary();
 });
 
+// "(2)", "(3)", etc. -- same disambiguation convention as a file manager
+// offering a name for a duplicated file, so a saved-as-new-copy exam is
+// distinguishable from the original at a glance without forcing the user
+// to type a new title themselves first.
+function uniqueExamTitle(baseTitle, excludeId) {
+  const taken = new Set(LIBRARY_EXAMS.filter((e) => e.id !== excludeId).map((e) => e.title));
+  if (!taken.has(baseTitle)) return baseTitle;
+  let n = 2;
+  while (taken.has(`${baseTitle} (${n})`)) n++;
+  return `${baseTitle} (${n})`;
+}
+
+// Edit-mode only: saves the current edits as a brand new library entry
+// instead of overwriting the one being edited, so the original stays
+// intact. Title auto-disambiguated ("(2)", "(3)"...) if it would otherwise
+// collide with the original or any other existing exam.
+$('btnSaveAsNewCopy').addEventListener('click', () => {
+  const originalId = state.currentLibraryId;
+  state.examTitle = uniqueExamTitle((state.examTitle || 'Untitled Exam').trim() || 'Untitled Exam', originalId);
+  state.currentLibraryId = null; // force a fresh insert rather than upserting into the entry being edited
+  state.quiz = { questions: state.manualQuestions, examTitle: state.examTitle, subject: state.subject, difficulty: 'manual', timeLimitMinutes: Number($('manualTimeLimitInput').value) || 0 };
+  saveGeneratedQuizAndReturnToLibrary();
+});
+
+// Edit-mode only: asks Gemini for a fresh set of questions using the
+// CURRENT questions' prompts as pseudo-source material (there's no saved
+// original source text/images to regenerate from -- only the questions
+// themselves ever get saved), landing back in the Manual Builder for
+// review/editing rather than auto-saving, so a bad regeneration is never
+// silently substituted for a good exam.
+$('btnRegenerateQuiz').addEventListener('click', async () => {
+  if (!state.manualQuestions.length) { alert('Add or load at least one question first -- regeneration needs something to work from.'); return; }
+  if (!state.geminiApiKeys.length) { alert('Add your Gemini API key in Profile first.'); return; }
+
+  const btn = $('btnRegenerateQuiz');
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Regenerating…';
+
+  try {
+    const pseudoSourceText = state.manualQuestions
+      .map((q) => [q.prompt, q.correctAnswer ? `(answer: ${q.correctAnswer})` : ''].filter(Boolean).join(' '))
+      .join('\n');
+    const typesPresent = [...new Set(state.manualQuestions.map((q) => q.type))];
+    const data = await callWithKeyRotation('generate-quiz', {
+      examTitle: state.examTitle,
+      subject: state.subject,
+      images: [],
+      text: pseudoSourceText,
+      questionTypes: typesPresent.length ? typesPresent : ['multipleChoice'],
+      difficulty: 'medium',
+      count: state.manualQuestions.length,
+    });
+    if (!data?.questions?.length) throw new Error('The AI did not return any questions.');
+    state.manualQuestions = data.questions;
+    renderManualQuestionList();
+  } catch (err) {
+    alert(`Could not regenerate: ${err.message || 'something went wrong.'}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+});
+
 /* ============ Quiz runner ============ */
+
+// Countdown timer, shown top-center during the quiz. Deliberately starts
+// counting from the moment the FIRST answer is given, not the moment the
+// quiz screen opens -- reading the first question shouldn't burn timed
+// minutes. Not persisted across a close/reopen (state.quizTimerStartedAt
+// lives only in memory): resuming a timed draft in a later session starts
+// the countdown fresh rather than trying to track real-world elapsed time
+// while the app was closed, which would need its own separate design
+// (and arguably isn't what "time limit" means for a resumable draft).
+let quizTimerInterval = null;
+
+function stopQuizTimer() {
+  if (quizTimerInterval) { clearInterval(quizTimerInterval); quizTimerInterval = null; }
+}
+
+function startQuizTimerIfNeeded() {
+  if (state.quizTimerStartedAt || !state.quiz || !state.quiz.timeLimitMinutes) return;
+  state.quizTimerStartedAt = Date.now();
+  stopQuizTimer();
+  quizTimerInterval = setInterval(tickQuizTimer, 1000);
+  tickQuizTimer();
+}
+
+function tickQuizTimer() {
+  if (!state.quiz || !state.quiz.timeLimitMinutes || !state.quizTimerStartedAt) return;
+  const totalSeconds = state.quiz.timeLimitMinutes * 60;
+  const remaining = totalSeconds - Math.floor((Date.now() - state.quizTimerStartedAt) / 1000);
+  const timerEl = $('quizTimer');
+  if (remaining <= 0) {
+    stopQuizTimer();
+    timerEl.textContent = "Time's up!";
+    timerEl.classList.add('is-low');
+    if (!state.isQuizComplete) {
+      alert("Time's up! Submitting your answers now.");
+      renderResults(true);
+      showCreateStep('results');
+    }
+    return;
+  }
+  const mm = Math.floor(remaining / 60);
+  const ss = remaining % 60;
+  timerEl.textContent = `⏱ ${mm}:${String(ss).padStart(2, '0')}`;
+  timerEl.classList.toggle('is-low', remaining <= 60);
+}
 
 // Live "N/total correct" shown top-right during the quiz -- only objective
 // (instantly-gradable) questions the user has actually answered contribute
@@ -1009,6 +1133,124 @@ const CHOICE_TYPE_DISPLAY = {
   checkCross: [{ value: 'True', label: '✓ Check' }, { value: 'False', label: '✗ Cross' }],
 };
 
+// Scratchpad for calculation questions -- a real freehand drawing surface
+// to work a problem out on before typing the final answer into the actual
+// input below it, not fed into grading at all. Fresh/blank on every
+// question render (drawings intentionally don't persist across
+// navigation or save -- it's scratch work, not exam content).
+const SCRATCHPAD_COLORS = ['#12172B', '#E0455C', '#1B2E8F', '#22B27D'];
+
+function scratchpadHtml() {
+  return `
+    <div class="scratchpad-card">
+      <div class="scratchpad-toolbar">
+        <div class="scratchpad-colors">
+          ${SCRATCHPAD_COLORS.map((c, i) => `<button type="button" class="scratchpad-swatch${i === 0 ? ' is-active' : ''}" data-color="${c}" style="background:${c}" aria-label="Color"></button>`).join('')}
+          <button type="button" class="scratchpad-tool is-active" data-tool="pen" aria-label="Pen">✎</button>
+          <button type="button" class="scratchpad-tool" data-tool="eraser" aria-label="Eraser">🧹</button>
+        </div>
+        <input type="range" min="1" max="16" value="3" class="scratchpad-thickness" id="scratchpadThickness" aria-label="Line thickness">
+        <div class="scratchpad-actions">
+          <button type="button" class="count-btn" id="btnScratchpadZoomOut" aria-label="Zoom out">−</button>
+          <button type="button" class="count-btn" id="btnScratchpadZoomExtent" aria-label="Reset zoom">⤢</button>
+          <button type="button" class="count-btn" id="btnScratchpadZoomIn" aria-label="Zoom in">+</button>
+          <button type="button" class="count-btn" id="btnScratchpadExpand" aria-label="Expand">⤢H</button>
+          <button type="button" class="count-btn" id="btnScratchpadClear" aria-label="Clear">🗑</button>
+        </div>
+      </div>
+      <div class="scratchpad-viewport" id="scratchpadViewport">
+        <canvas id="scratchpadCanvas" width="1000" height="600"></canvas>
+      </div>
+    </div>`;
+}
+
+function setupScratchpad() {
+  const canvas = $('scratchpadCanvas');
+  const viewport = $('scratchpadViewport');
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  let tool = 'pen';
+  let color = SCRATCHPAD_COLORS[0];
+  let zoom = 1;
+  let drawing = false;
+
+  function canvasPoint(e) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: (e.clientX - rect.left) / rect.width * canvas.width, y: (e.clientY - rect.top) / rect.height * canvas.height };
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    drawing = true;
+    canvas.setPointerCapture(e.pointerId);
+    const p = canvasPoint(e);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!drawing) return;
+    const p = canvasPoint(e);
+    ctx.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : 'source-over';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Number($('scratchpadThickness').value) * (tool === 'eraser' ? 3 : 1);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((evt) => canvas.addEventListener(evt, () => { drawing = false; }));
+
+  $('scratchpadViewport').closest('.scratchpad-card').querySelectorAll('.scratchpad-swatch').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      color = btn.dataset.color;
+      tool = 'pen';
+      $('scratchpadViewport').closest('.scratchpad-card').querySelectorAll('.scratchpad-swatch, .scratchpad-tool').forEach((b) => b.classList.remove('is-active'));
+      btn.classList.add('is-active');
+      $('scratchpadViewport').closest('.scratchpad-card').querySelector('.scratchpad-tool[data-tool="pen"]').classList.add('is-active');
+    });
+  });
+  $('scratchpadViewport').closest('.scratchpad-card').querySelectorAll('.scratchpad-tool').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      tool = btn.dataset.tool;
+      $('scratchpadViewport').closest('.scratchpad-card').querySelectorAll('.scratchpad-tool').forEach((b) => b.classList.remove('is-active'));
+      btn.classList.add('is-active');
+    });
+  });
+
+  function applyZoom() {
+    canvas.style.width = `${1000 * zoom}px`;
+    canvas.style.height = `${600 * zoom}px`;
+  }
+  $('btnScratchpadZoomIn').addEventListener('click', () => { zoom = Math.min(3, zoom + 0.25); applyZoom(); });
+  $('btnScratchpadZoomOut').addEventListener('click', () => { zoom = Math.max(0.5, zoom - 0.25); applyZoom(); });
+  $('btnScratchpadZoomExtent').addEventListener('click', () => { zoom = 1; applyZoom(); viewport.scrollLeft = 0; viewport.scrollTop = 0; });
+  $('btnScratchpadClear').addEventListener('click', () => { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height); });
+  $('btnScratchpadExpand').addEventListener('click', (e) => {
+    viewport.classList.toggle('is-expanded');
+    e.target.textContent = viewport.classList.contains('is-expanded') ? '⤡H' : '⤢H';
+  });
+}
+
+// Tappable question-number pills -- lets the user skip a hard question and
+// come back to it later without paging through every question in between
+// via Previous/Next, and makes it obvious at a glance which ones still
+// need an answer (filled = answered, outlined = not, solid = current).
+function renderQuizNav(total) {
+  const row = $('quizNavRow');
+  row.innerHTML = state.quiz.questions.map((q, i) => {
+    const answered = isAnswered(q, state.answers[q.id]);
+    const cls = ['quiz-nav-pill', i === state.quizIndex ? 'is-current' : (answered ? 'is-answered' : '')].filter(Boolean).join(' ');
+    return `<button type="button" class="${cls}" data-index="${i}">${i + 1}</button>`;
+  }).join('');
+  row.querySelectorAll('.quiz-nav-pill').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.quizIndex = Number(btn.dataset.index);
+      renderQuizQuestion();
+    });
+  });
+}
+
 function renderQuizQuestion() {
   const question = state.quiz.questions[state.quizIndex];
   const total = state.quiz.questions.length;
@@ -1020,6 +1262,16 @@ function renderQuizQuestion() {
   $('questionTypeTag').textContent = TYPE_LABELS[question.type] || question.type;
   $('questionPrompt').textContent = question.prompt;
   updateLiveQuizScore();
+  renderQuizNav(total);
+
+  const timerEl = $('quizTimer');
+  timerEl.hidden = !state.quiz.timeLimitMinutes;
+  if (state.quiz.timeLimitMinutes && !state.quizTimerStartedAt) {
+    // Not started yet -- show the full duration as a preview rather than
+    // a blank/zeroed timer, so it's clear up front what the limit is.
+    timerEl.textContent = `⏱ ${state.quiz.timeLimitMinutes}:00`;
+    timerEl.classList.remove('is-low');
+  }
 
   const answer = state.answers[question.id];
   const area = $('questionAnswerArea');
@@ -1048,6 +1300,7 @@ function renderQuizQuestion() {
       area.querySelectorAll('.choice-option').forEach((btn) => {
         btn.addEventListener('click', () => {
           state.answers[question.id] = btn.dataset.choice;
+          startQuizTimerIfNeeded();
           renderQuizQuestion();
         });
       });
@@ -1055,9 +1308,11 @@ function renderQuizQuestion() {
   } else if (question.type === 'identification' || question.type === 'calculation') {
     const inputMode = question.type === 'calculation' ? ' inputmode="decimal"' : '';
     const placeholder = question.type === 'calculation' ? 'Enter a numeric answer' : 'Type your answer';
-    area.innerHTML = `<input type="text"${inputMode} class="text-input${locked ? ' answer-input-locked' : ''}" id="answerInput" placeholder="${placeholder}" value="${esc(answer || '')}"${locked ? ' readonly' : ''}>`;
+    const scratchpad = question.type === 'calculation' ? scratchpadHtml() : '';
+    area.innerHTML = `${scratchpad}<input type="text"${inputMode} class="text-input${locked ? ' answer-input-locked' : ''}" id="answerInput" placeholder="${placeholder}" value="${esc(answer || '')}"${locked ? ' readonly' : ''}>`;
+    if (question.type === 'calculation') setupScratchpad();
     if (!locked) {
-      $('answerInput').addEventListener('input', (e) => { state.answers[question.id] = e.target.value; updateLiveQuizScore(); });
+      $('answerInput').addEventListener('input', (e) => { state.answers[question.id] = e.target.value; startQuizTimerIfNeeded(); updateLiveQuizScore(); });
       // Instant-choice types (above) lock the moment you click; a typed
       // answer can't grade until you're done typing -- blur (tabbing/
       // clicking away) is the natural "on the spot" moment for these.
@@ -1089,13 +1344,14 @@ function renderQuizQuestion() {
         sel.addEventListener('change', (e) => {
           const current = state.answers[question.id] || {};
           state.answers[question.id] = { ...current, [Number(e.target.dataset.index)]: e.target.value };
+          startQuizTimerIfNeeded();
           renderQuizQuestion();
         });
       });
     }
   } else {
     area.innerHTML = `<textarea class="text-input" id="answerInput" rows="6" placeholder="Write your answer…">${esc(answer || '')}</textarea>`;
-    $('answerInput').addEventListener('input', (e) => { state.answers[question.id] = e.target.value; });
+    $('answerInput').addEventListener('input', (e) => { state.answers[question.id] = e.target.value; startQuizTimerIfNeeded(); });
   }
 
   $('btnQuizPrev').disabled = state.quizIndex === 0;
@@ -1124,6 +1380,16 @@ $('btnQuizNext').addEventListener('click', () => {
     state.quizIndex += 1;
     renderQuizQuestion();
   } else {
+    // Won't let the exam end with a blank question -- jumps to the first
+    // unanswered one (via the same nav pills) instead of finishing, rather
+    // than silently scoring skipped questions as wrong.
+    const firstUnanswered = state.quiz.questions.findIndex((q) => !isAnswered(q, state.answers[q.id]));
+    if (firstUnanswered !== -1) {
+      alert(`Question ${firstUnanswered + 1} is still unanswered. Answer every question before finishing.`);
+      state.quizIndex = firstUnanswered;
+      renderQuizQuestion();
+      return;
+    }
     renderResults(true);
     showCreateStep('results');
   }
@@ -1617,13 +1883,18 @@ $('btnEditQuizFromResults').addEventListener('click', () => {
 function continueQuizFromLibrary(item) {
   if (!item || !item.quizData) return;
 
-  state.quiz = { questions: item.quizData.questions || [] };
+  // Spread the whole quizData object, not just .questions -- was dropping
+  // every other quiz-level property (timeLimitMinutes, difficulty) on
+  // every resume, found via an actual test: a saved time limit silently
+  // vanished the moment a draft was reopened.
+  state.quiz = { ...item.quizData, questions: item.quizData.questions || [] };
   state.subject = item.subject;
   state.examTitle = item.examTitle || item.title;
   state.answers = item.answers ? { ...item.answers } : {};
   state.essayGrades = item.essayGrades ? { ...item.essayGrades } : {};
   state.quizIndex = Math.min(item.quizIndex || 0, (item.quizData.questions || []).length - 1);
   state.isQuizComplete = false;
+  state.quizTimerStartedAt = null; // fresh countdown for this session, see comment on that field
   state.currentLibraryId = item.id || null; // lets a later auto-save update this same entry instead of inserting a duplicate
 
   switchTab('create');
@@ -1640,13 +1911,14 @@ function continueQuizFromLibrary(item) {
 function retakeQuizFromLibrary(item) {
   if (!item || !item.quizData) return;
 
-  state.quiz = { questions: shuffleArray(item.quizData.questions || []) };
+  state.quiz = { ...item.quizData, questions: shuffleArray(item.quizData.questions || []) };
   state.subject = item.subject;
   state.examTitle = item.examTitle || item.title;
   state.answers = {};
   state.essayGrades = {};
   state.quizIndex = 0;
   state.isQuizComplete = false;
+  state.quizTimerStartedAt = null;
   state.currentLibraryId = item.id || null;
 
   switchTab('create');
@@ -1675,7 +1947,10 @@ function editQuizFromLibrary(item) {
   switchTab('create');
   $('examTitleInput').value = state.examTitle;
   $('subjectSelect').value = state.subject || '';
+  $('manualTimeLimitInput').value = item.quizData.timeLimitMinutes || '';
   setGenerationMode('manual');
+  $('btnRegenerateQuiz').hidden = false;
+  $('btnSaveAsNewCopy').hidden = false;
   renderManualBuilder();
   showCreateStep('manualBuilder');
 }
@@ -1889,7 +2164,7 @@ async function shareQuizAsHtml(item) {
 function viewCompletedExam(item) {
   if (!item || !item.quizData) return;
 
-  state.quiz = { questions: item.quizData.questions || [] };
+  state.quiz = { ...item.quizData, questions: item.quizData.questions || [] };
   state.subject = item.subject;
   state.examTitle = item.examTitle || item.title;
   state.answers = item.answers ? { ...item.answers } : {};

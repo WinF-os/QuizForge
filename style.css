@@ -393,9 +393,16 @@ textarea.text-input { resize: vertical; font-family: inherit; }
 .quiz-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2); }
 .quiz-header-row #quizExamTitle { font-weight: 700; font-size: 0.92rem; }
 .quiz-live-score { font-size: 0.9rem; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--color-primary); background: var(--color-primary-tint); padding: 3px 12px; border-radius: var(--radius-pill); }
+.quiz-timer { position: absolute; left: 50%; transform: translateX(-50%); font-size: 0.9rem; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--color-text); }
+.quiz-timer.is-low { color: var(--color-danger); }
+.quiz-header-row { position: relative; }
 .progress-track { height: 6px; border-radius: var(--radius-pill); background: var(--color-border); overflow: hidden; }
 .progress-fill { height: 100%; background: var(--color-primary); transition: width 0.2s ease; }
 .quiz-runner-meta { display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--color-text-muted); margin-top: var(--space-2); }
+.quiz-nav-row { display: flex; gap: 6px; overflow-x: auto; margin-top: var(--space-2); padding-bottom: 4px; }
+.quiz-nav-pill { flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--color-border); background: var(--color-surface); color: var(--color-text-muted); font-size: 0.72rem; font-weight: 700; display: flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; }
+.quiz-nav-pill.is-answered { border-color: var(--color-primary); background: var(--color-primary-tint); color: var(--color-primary); }
+.quiz-nav-pill.is-current { border-color: var(--color-primary); background: var(--color-primary); color: #fff; }
 .question-card { display: flex; flex-direction: column; gap: var(--space-4); }
 .question-type-tag { align-self: flex-start; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; background: var(--color-primary-tint); color: var(--color-primary); padding: 4px 10px; border-radius: var(--radius-pill); }
 .question-prompt { font-size: 1.02rem; font-weight: 600; line-height: 1.4; }
@@ -416,6 +423,19 @@ textarea.text-input { resize: vertical; font-family: inherit; }
 .matching-row.is-incorrect { border-color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 14%, var(--color-surface)); }
 .matching-left { flex: 1; font-size: 0.9rem; font-weight: 600; }
 .matching-select { flex: 1; }
+.scratchpad-card { border: 1px solid var(--color-border); border-radius: var(--radius-sm); overflow: hidden; margin-bottom: var(--space-3); }
+.scratchpad-toolbar { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: 8px 10px; background: var(--color-bg); border-bottom: 1px solid var(--color-border); }
+.scratchpad-colors { display: flex; align-items: center; gap: 6px; }
+.scratchpad-swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; padding: 0; }
+.scratchpad-swatch.is-active { border-color: var(--color-text); }
+.scratchpad-tool { width: 26px; height: 26px; border-radius: var(--radius-sm); border: 1px solid var(--color-border); background: var(--color-surface); font-size: 0.85rem; display: flex; align-items: center; justify-content: center; }
+.scratchpad-tool.is-active { background: var(--color-primary-tint); border-color: var(--color-primary); }
+.scratchpad-thickness { width: 70px; }
+.scratchpad-actions { display: flex; gap: 4px; margin-left: auto; }
+.scratchpad-actions .count-btn { width: 26px; height: 26px; font-size: 0.8rem; }
+.scratchpad-viewport { height: 180px; overflow: auto; background: #fff; touch-action: none; }
+.scratchpad-viewport.is-expanded { height: 420px; }
+.scratchpad-viewport canvas { display: block; touch-action: none; }
 .quiz-runner-nav { display: flex; gap: var(--space-3); }
 .quiz-runner-nav .btn { flex: 1; }
 .quiz-safety-note { font-size: 0.76rem; color: var(--color-text-muted); text-align: center; margin-top: var(--space-2); }
