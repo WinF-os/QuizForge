@@ -1671,9 +1671,52 @@ function setupAutoSave() {
 // before reloading, which forces a fully fresh fetch of everything -- less
 // nuanced than Winfinity's approach, but real and reliable rather than a
 // placeholder alert.
+//
+// NONE of that applies inside the packaged Android app, though: the APK
+// bundles a snapshot of these files at build time (see README's "Building
+// the Android APK") -- there's no live app.js to re-fetch, and reloading
+// just reloads the same bundled copy. isNativeApp() below detects that
+// context and switches to a different real mechanism: check GitHub's
+// latest Release via its API, and if newer, open that release's .apk
+// directly. Because it's built with the SAME package ID
+// (io.github.winfos.quizforge) and a higher version number, Android
+// installs it as an UPDATE to the existing app in place -- not a second,
+// separate app -- the same way any sideloaded APK update works outside
+// the Play Store. The user still has to tap through Android's own
+// install/update confirmation dialog; nothing can silently self-install
+// without root or an MDM-managed device, Play Store or not.
+// NOT verified on a real device -- this repo has no way to run/test an
+// actual Android install flow. Confirm on-device before relying on it.
 let latestKnownVersion = null;
+let latestApkDownloadUrl = null;
+
+function isNativeApp() {
+  return typeof window.Capacitor !== 'undefined' && !!window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
+}
+
+function extractVersionNumber(str) {
+  const m = String(str || '').match(/(\d+\.\d+\.\d+)/);
+  return m ? m[1] : null;
+}
+
+async function checkForUpdateNative() {
+  try {
+    const res = await fetch('https://api.github.com/repos/WinF-os/QuizForge/releases/latest');
+    if (!res.ok) return null;
+    const data = await res.json();
+    const asset = (data.assets || []).find((a) => a.name.toLowerCase().endsWith('.apk'));
+    const remoteVersion = extractVersionNumber(data.tag_name);
+    if (!remoteVersion || !asset) return null;
+    latestKnownVersion = remoteVersion;
+    latestApkDownloadUrl = asset.browser_download_url;
+    return remoteVersion;
+  } catch (e) {
+    return null;
+  }
+}
 
 async function checkForUpdate() {
+  if (isNativeApp()) return checkForUpdateNative();
   try {
     const res = await fetch('https://winf-os.github.io/QuizForge/app.js?nocache=' + Date.now());
     if (!res.ok) return null;
@@ -1687,6 +1730,13 @@ async function checkForUpdate() {
 }
 
 async function applyUpdate() {
+  if (isNativeApp()) {
+    // Can't silently self-update -- opens the .apk download, same proven
+    // pattern already used for the "Get a Free Gemini API Key" link.
+    // Android takes over from there (download -> install-as-update prompt).
+    if (latestApkDownloadUrl) window.open(latestApkDownloadUrl, '_blank', 'noopener');
+    return;
+  }
   try {
     if ('serviceWorker' in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
@@ -1702,6 +1752,11 @@ async function applyUpdate() {
 }
 
 function isAutoUpdateEnabled() {
+  // Auto-apply never fires in the native app regardless of this toggle --
+  // applyUpdate() there opens an external download, which should only ever
+  // happen from an explicit tap, not silently switch the user out to a
+  // browser in the background.
+  if (isNativeApp()) return false;
   return localStorage.getItem('quizforge-auto-update') !== '0'; // on by default, matching the popup's own default-checked toggle
 }
 
@@ -1749,12 +1804,15 @@ async function showVersionPopup() {
   statusEl.textContent = 'Checking for updates…';
   updateBtn.hidden = true;
   const remoteVersion = await checkForUpdate();
+  const currentVersion = isNativeApp() ? extractVersionNumber(APP_VERSION) : APP_VERSION;
   if (!remoteVersion) {
-    statusEl.textContent = "Could not check for updates -- you're offline, or the live site is unreachable.";
-  } else if (remoteVersion === APP_VERSION) {
+    statusEl.textContent = "Could not check for updates -- you're offline, or GitHub is unreachable.";
+  } else if (remoteVersion === currentVersion) {
     statusEl.textContent = "You're on the latest version.";
   } else {
-    statusEl.textContent = `A new version is available: ${esc(remoteVersion)}.`;
+    statusEl.textContent = isNativeApp()
+      ? `A new version is available: ${esc(remoteVersion)}. Tap Update Now to download it -- Android will ask you to confirm installing it as an update.`
+      : `A new version is available: ${esc(remoteVersion)}.`;
     updateBtn.hidden = false;
     if (isAutoUpdateEnabled()) applyUpdate();
   }
@@ -1764,7 +1822,7 @@ async function showVersionPopup() {
 // Background check on load (not just when the popup is opened), same
 // convention as Winfinity's own "check ~5s after load" behavior -- lets
 // auto-update actually apply without the user ever opening the popup.
-setTimeout(() => { checkForUpdate().then((v) => { refreshUpdateBadge(); if (v && v !== APP_VERSION && isAutoUpdateEnabled()) applyUpdate(); }); }, 5000);
+setTimeout(() => { checkForUpdate().then((v) => { refreshUpdateBadge(); if (v && v !== currentComparableVersion() && isAutoUpdateEnabled()) applyUpdate(); }); }, 5000);
 
 // Version button -> the real popup (checkForUpdate/applyUpdate above),
 // replacing the old placeholder alert entirely. initTheme/renderHome/etc.
@@ -1778,8 +1836,16 @@ if (versionButton) versionButton.addEventListener('click', showVersionPopup);
 // place to reach it plus a small notification badge that lights up
 // whenever a background or manual check has found a newer version, same
 // idea as Winfinity's own Profile-tab update button/badge.
+// Native compares bare "1.2.3"-style numbers (extracted from a GitHub
+// release tag); web compares the raw APP_VERSION string against itself as
+// served live -- these are two different formats, comparing the wrong
+// pair silently made the app think an update was always/never available.
+function currentComparableVersion() {
+  return isNativeApp() ? extractVersionNumber(APP_VERSION) : APP_VERSION;
+}
+
 function refreshUpdateBadge() {
-  const hasUpdate = !!(latestKnownVersion && latestKnownVersion !== APP_VERSION);
+  const hasUpdate = !!(latestKnownVersion && latestKnownVersion !== currentComparableVersion());
   const badge = document.getElementById('profileUpdateBadge');
   if (badge) badge.hidden = !hasUpdate;
   const btn = document.getElementById('btnProfileCheckUpdate');
@@ -1792,7 +1858,7 @@ document.getElementById('btnProfileCheckUpdate').addEventListener('click', async
   const btn = document.getElementById('btnProfileCheckUpdate');
   const status = document.getElementById('profileUpdateStatus');
 
-  if (latestKnownVersion && latestKnownVersion !== APP_VERSION) {
+  if (latestKnownVersion && latestKnownVersion !== currentComparableVersion()) {
     applyUpdate();
     return;
   }
@@ -1804,11 +1870,13 @@ document.getElementById('btnProfileCheckUpdate').addEventListener('click', async
   refreshUpdateBadge();
 
   if (!remoteVersion) {
-    status.textContent = "Could not check for updates -- you're offline, or the live site is unreachable.";
-  } else if (remoteVersion === APP_VERSION) {
+    status.textContent = "Could not check for updates -- you're offline, or GitHub is unreachable.";
+  } else if (remoteVersion === currentComparableVersion()) {
     status.textContent = "You're on the latest version.";
   } else {
-    status.textContent = `A new version is available: ${esc(remoteVersion)}. Tap Update Now to install it.`;
+    status.textContent = isNativeApp()
+      ? `A new version is available: ${esc(remoteVersion)}. Tap Update Now to download it -- Android will ask you to confirm installing it as an update.`
+      : `A new version is available: ${esc(remoteVersion)}. Tap Update Now to install it.`;
     if (isAutoUpdateEnabled()) applyUpdate();
   }
 });
