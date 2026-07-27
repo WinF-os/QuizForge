@@ -17,7 +17,39 @@ dist-ssr
 # capacitor-app/android/. `www/` is just a synced copy of the real web
 # files (index.html/app.js/etc, already tracked at the repo root) that
 # `npx cap sync` recreates -- not a second source of truth to track.
-android/
+# EXCEPTION: these two files hold real, hand-written native fixes (camera
+# runtime-permission request + the AndroidManifest CAMERA permission it
+# needs) that `npx cap add android` would NOT recreate -- losing them would
+# silently reintroduce the "Could not access the camera" bug on any future
+# from-scratch Android project regeneration. IMPORTANT: this is why the
+# top-level pattern below is `android/*`, not a bare `android/` -- a bare
+# directory pattern makes git skip descending into it entirely, for
+# performance, so NO negation deeper inside it can ever take effect no
+# matter how it's written (confirmed by testing: bare `android/` +
+# `!android/app/` still reported the target file as ignored). `android/*`
+# matches the same contents via glob instead, which still allows traversal.
+# Verified end-to-end with `git check-ignore -v` and `git add -n` after
+# writing this -- don't trust gitignore negation blindly, it's easy to get
+# subtly wrong in a way that *looks* right.
+android/*
+!android/app/
+android/app/*
+!android/app/src/
+android/app/src/*
+!android/app/src/main/
+android/app/src/main/*
+!android/app/src/main/AndroidManifest.xml
+!android/app/src/main/java/
+android/app/src/main/java/*
+!android/app/src/main/java/io/
+android/app/src/main/java/io/*
+!android/app/src/main/java/io/github/
+android/app/src/main/java/io/github/*
+!android/app/src/main/java/io/github/winfos/
+android/app/src/main/java/io/github/winfos/*
+!android/app/src/main/java/io/github/winfos/quizforge/
+android/app/src/main/java/io/github/winfos/quizforge/*
+!android/app/src/main/java/io/github/winfos/quizforge/MainActivity.java
 www/
 
 # Local dev tooling config, not part of the app
