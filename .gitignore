@@ -12,6 +12,14 @@ dist
 dist-ssr
 *.local
 
+# Capacitor Android build output -- regenerable via `npx cap add android`
+# (see capacitor.config.json), same convention as Winfinity's own
+# capacitor-app/android/. `www/` is just a synced copy of the real web
+# files (index.html/app.js/etc, already tracked at the repo root) that
+# `npx cap sync` recreates -- not a second source of truth to track.
+android/
+www/
+
 # Local dev tooling config, not part of the app
 .claude/
 supabase/.temp/

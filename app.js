@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.0.62';
+const APP_VERSION = 'QF_SYS_V.1.1.1';
 
 /* ============ State ============ */
 
@@ -1133,82 +1133,115 @@ function setupAutoSave() {
 }
 
 // Show version popup
-function showVersionPopup() {
-  // Create version popup if it doesn't exist
+// Real check-for-update: fetches the live deployed app.js and compares its
+// APP_VERSION against this build's own -- same idea as Winfinity's own
+// update system, simplified since QuizForge's service worker doesn't have
+// a SKIP_WAITING message-based lifecycle to hook into (see sw.js). "Update
+// Now" instead unregisters the current worker and clears every cache
+// before reloading, which forces a fully fresh fetch of everything -- less
+// nuanced than Winfinity's approach, but real and reliable rather than a
+// placeholder alert.
+let latestKnownVersion = null;
+
+async function checkForUpdate() {
+  try {
+    const res = await fetch('https://winf-os.github.io/QuizForge/app.js?nocache=' + Date.now());
+    if (!res.ok) return null;
+    const text = await res.text();
+    const match = text.match(/APP_VERSION\s*=\s*'([^']+)'/);
+    if (match) latestKnownVersion = match[1];
+    return match ? match[1] : null;
+  } catch (e) {
+    return null; // offline or unreachable -- silently no-op, same as Winfinity's own background check
+  }
+}
+
+async function applyUpdate() {
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+  } finally {
+    location.reload();
+  }
+}
+
+function isAutoUpdateEnabled() {
+  return localStorage.getItem('quizforge-auto-update') !== '0'; // on by default, matching the popup's own default-checked toggle
+}
+
+async function showVersionPopup() {
   let popup = document.getElementById('versionPopup');
-  
+
   if (!popup) {
     const popupHTML = `
       <div class="version-popup" id="versionPopup">
         <div class="version-popup-content">
           <div class="version-popup-header">
             <h2 class="version-popup-title">QuizForge</h2>
-            <span class="version-popup-version">v1.0.6</span>
+            <span class="version-popup-version">${esc(APP_VERSION)}</span>
           </div>
-          <p>Version 1.0.6 is now available with enhanced features including repeat quiz, drafts, and history tracking.</p>
-          <p>Automatic updates are currently <strong id="autoUpdateStatus">enabled</strong>.</p>
+          <p id="versionPopupStatus">Checking for updates…</p>
           <div class="version-popup-actions">
             <label class="toggle-switch">
-              <input type="checkbox" id="autoUpdateToggle" checked>
+              <input type="checkbox" id="autoUpdateToggle">
               <span class="slider"></span>
             </label>
             <span class="toggle-label">Auto-update</span>
-            <button class="update-btn" id="updateButton">Update Now</button>
+            <button class="update-btn" id="updateButton" hidden>Update Now</button>
           </div>
         </div>
       </div>
     `;
-    
+
     document.body.insertAdjacentHTML('beforeend', popupHTML);
     popup = document.getElementById('versionPopup');
-    
-    // Add event listeners
-    const updateButton = document.getElementById('updateButton');
-    const autoUpdateToggle = document.getElementById('autoUpdateToggle');
-    
-    if (updateButton) {
-      updateButton.addEventListener('click', () => {
-        alert('Update functionality would be implemented here in a real application');
-        popup.classList.remove('is-visible');
-      });
-    }
-    
-    if (autoUpdateToggle) {
-      autoUpdateToggle.addEventListener('change', function() {
-        const statusElement = document.getElementById('autoUpdateStatus');
-        if (statusElement) {
-          statusElement.textContent = this.checked ? 'enabled' : 'disabled';
-        }
-      });
-    }
+
+    document.getElementById('updateButton').addEventListener('click', applyUpdate);
+    document.getElementById('autoUpdateToggle').addEventListener('change', function () {
+      localStorage.setItem('quizforge-auto-update', this.checked ? '1' : '0');
+    });
+    popup.addEventListener('click', function (e) {
+      if (e.target === popup) popup.classList.remove('is-visible');
+    });
   }
-  
-  // Show the popup
+
+  document.getElementById('autoUpdateToggle').checked = isAutoUpdateEnabled();
   popup.classList.add('is-visible');
-  
-  // Close when clicking outside
-  popup.addEventListener('click', function(e) {
-    if (e.target === popup) {
-      popup.classList.remove('is-visible');
-    }
-  });
+
+  const statusEl = document.getElementById('versionPopupStatus');
+  const updateBtn = document.getElementById('updateButton');
+  statusEl.textContent = 'Checking for updates…';
+  updateBtn.hidden = true;
+  const remoteVersion = await checkForUpdate();
+  if (!remoteVersion) {
+    statusEl.textContent = "Could not check for updates -- you're offline, or the live site is unreachable.";
+  } else if (remoteVersion === APP_VERSION) {
+    statusEl.textContent = "You're on the latest version.";
+  } else {
+    statusEl.textContent = `A new version is available: ${esc(remoteVersion)}.`;
+    updateBtn.hidden = false;
+    if (isAutoUpdateEnabled()) applyUpdate();
+  }
 }
 
-/* ============ Init ============ */
+// Background check on load (not just when the popup is opened), same
+// convention as Winfinity's own "check ~5s after load" behavior -- lets
+// auto-update actually apply without the user ever opening the popup.
+setTimeout(() => { checkForUpdate().then((v) => { if (v && v !== APP_VERSION && isAutoUpdateEnabled()) applyUpdate(); }); }, 5000);
 
-initTheme();
-refreshGeminiKey();
-renderHome();
-resetCreateStep();
-document.getElementById('appHeaderVersion').textContent = APP_VERSION;
-
-// Add version button listener
+// Version button -> the real popup (checkForUpdate/applyUpdate above),
+// replacing the old placeholder alert entirely. initTheme/renderHome/etc.
+// already ran once in the single Init block near the top of this file --
+// deliberately NOT repeated here.
 const versionButton = document.getElementById('versionButton');
-if (versionButton) {
-  versionButton.addEventListener('click', showVersionPopup);
-}
+if (versionButton) versionButton.addEventListener('click', showVersionPopup);
 
-// Setup auto-save functionality
 setupAutoSave();
 
 if ('serviceWorker' in navigator) {
@@ -1218,17 +1251,6 @@ if ('serviceWorker' in navigator) {
     });
   });
 }
-
-// Add version popup functionality
-document.addEventListener('DOMContentLoaded', function() {
-  const versionButton = document.getElementById('versionButton');
-  if (versionButton) {
-    versionButton.addEventListener('click', function() {
-      // Create a simple alert with version info
-      alert(`QuizForge Version: ${APP_VERSION}\n\nFeatures included:\n- Repeat Quiz (Shuffled)\n- Save as Draft\n- Correct Answer Toggle\n- Library History Tracking`);
-    });
-  }
-});
 
 // "Show correct answer on wrong answers" toggle -- the actual display
 // logic lives in renderQuizQuestion(), which re-renders on every answer/
