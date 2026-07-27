@@ -37,9 +37,7 @@ const state = {
 const QUESTION_TYPES = [
   { key: 'multipleChoice', title: 'Multiple Choice', sub: 'Standard 4-option selection.', icon: '☑' },
   { key: 'trueFalse', title: 'True / False', sub: 'Binary response format.', icon: '⇄' },
-  { key: 'checkCross', title: 'Check / Cross', sub: 'True/False shown as ✓ or ✗.', icon: '✓' },
   { key: 'identification', title: 'Identification', sub: 'One or two word factual answers.', icon: '🔎' },
-  { key: 'identificationChoices', title: 'Identification (with Choices)', sub: 'Fill in the blank from a word bank.', icon: '🗂' },
   { key: 'matching', title: 'Matching Type', sub: 'Match each item on the left to one on the right.', icon: '🔗' },
   { key: 'calculation', title: 'Calculation', sub: 'Numeric, worked-out answers.', icon: '∑' },
   { key: 'essay', title: 'Essay', sub: 'Short written responses, AI-graded.', icon: '✎' },
@@ -54,9 +52,7 @@ const DIFFICULTIES = [
 const TYPE_LABELS = {
   multipleChoice: 'Multiple Choice',
   trueFalse: 'True / False',
-  checkCross: 'Check / Cross',
   identification: 'Identification',
-  identificationChoices: 'Identification (with Choices)',
   matching: 'Matching Type',
   calculation: 'Calculation',
   essay: 'Essay',
@@ -870,14 +866,13 @@ function renderManualTypeFields() {
           </div>
         `).join('')}
       </div>`;
-  } else if (type === 'trueFalse' || type === 'checkCross') {
-    const labels = type === 'checkCross' ? ['✓ Check', '✗ Cross'] : ['True', 'False'];
+  } else if (type === 'trueFalse') {
     box.innerHTML = `
       <label class="field-block">
         <span class="field-label">Correct Answer</span>
         <select class="select-input" id="manualTfCorrect">
-          <option value="True">${labels[0]}</option>
-          <option value="False">${labels[1]}</option>
+          <option value="True">True</option>
+          <option value="False">False</option>
         </select>
       </label>`;
   } else if (type === 'identification') {
@@ -890,16 +885,6 @@ function renderManualTypeFields() {
         <span class="field-label">Other Acceptable Answers (comma-separated, optional)</span>
         <input type="text" class="text-input" id="manualIdAlt" placeholder="e.g. mitochondrion">
       </label>`;
-  } else if (type === 'identificationChoices') {
-    box.innerHTML = `
-      <label class="field-block">
-        <span class="field-label">Correct Answer</span>
-        <input type="text" class="text-input" id="manualIcCorrect" placeholder="e.g. Mitochondria">
-      </label>
-      <div class="field-block">
-        <span class="field-label">Word Bank — other choices shown alongside the correct one</span>
-        ${[0, 1, 2].map((i) => `<input type="text" class="text-input" id="manualIcChoice${i}" placeholder="Distractor ${i + 1}" style="margin-bottom:8px;">`).join('')}
-      </div>`;
   } else if (type === 'matching') {
     box.innerHTML = `
       <div class="field-block">
@@ -960,7 +945,7 @@ $('btnAddManualQuestion').addEventListener('click', () => {
     const correctIndex = Number(document.querySelector('input[name="manualMcCorrect"]:checked').value);
     question.choices = choices;
     question.correctAnswer = choices[correctIndex];
-  } else if (type === 'trueFalse' || type === 'checkCross') {
+  } else if (type === 'trueFalse') {
     question.choices = ['True', 'False'];
     question.correctAnswer = $('manualTfCorrect').value;
   } else if (type === 'identification') {
@@ -969,13 +954,6 @@ $('btnAddManualQuestion').addEventListener('click', () => {
     const alt = $('manualIdAlt').value.split(',').map((s) => s.trim()).filter(Boolean);
     question.correctAnswer = correct;
     question.acceptableAnswers = [correct, ...alt];
-  } else if (type === 'identificationChoices') {
-    const correct = $('manualIcCorrect').value.trim();
-    if (!correct) return;
-    const distractors = [0, 1, 2].map((i) => $(`manualIcChoice${i}`).value.trim()).filter(Boolean);
-    question.correctAnswer = correct;
-    question.acceptableAnswers = [correct];
-    question.choices = shuffleArray([correct, ...distractors]);
   } else if (type === 'matching') {
     const pairs = [0, 1, 2, 3]
       .map((i) => ({ left: $(`manualMatchLeft${i}`).value.trim(), right: $(`manualMatchRight${i}`).value.trim() }))
@@ -993,7 +971,6 @@ $('btnAddManualQuestion').addEventListener('click', () => {
   $('manualExplanationInput').value = '';
   if (type === 'multipleChoice') [0, 1, 2, 3].forEach((i) => { $(`manualChoice${i}`).value = ''; });
   if (type === 'identification') { $('manualIdCorrect').value = ''; $('manualIdAlt').value = ''; }
-  if (type === 'identificationChoices') { $('manualIcCorrect').value = ''; [0, 1, 2].forEach((i) => { $(`manualIcChoice${i}`).value = ''; }); }
   if (type === 'matching') [0, 1, 2, 3].forEach((i) => { $(`manualMatchLeft${i}`).value = ''; $(`manualMatchRight${i}`).value = ''; });
   if (type === 'calculation') { $('manualCalcCorrect').value = ''; }
   renderManualQuestionList();
@@ -1126,12 +1103,6 @@ function updateLiveQuizScore() {
   }).length;
   $('quizLiveScore').textContent = `${correct}/${questions.length}`;
 }
-
-// checkCross is a trueFalse question underneath (correctAnswer/grading is
-// identical, see gradeObjectiveQuestion) -- only the button labels differ.
-const CHOICE_TYPE_DISPLAY = {
-  checkCross: [{ value: 'True', label: '✓ Check' }, { value: 'False', label: '✗ Cross' }],
-};
 
 // Scratchpad for calculation questions -- a real freehand drawing surface
 // to work a problem out on before typing the final answer into the actual
@@ -1283,9 +1254,8 @@ function renderQuizQuestion() {
   const isWrong = hasAnswer && isObjectiveType(question.type) && !gradeObjectiveQuestion(question, answer);
   const locked = state.showCorrectAnswers && isWrong;
 
-  if (question.type === 'multipleChoice' || question.type === 'trueFalse' || question.type === 'checkCross' || question.type === 'identificationChoices') {
-    const options = CHOICE_TYPE_DISPLAY[question.type]
-      || (question.choices?.length ? question.choices : ['True', 'False']).map((c) => ({ value: c, label: c }));
+  if (question.type === 'multipleChoice' || question.type === 'trueFalse') {
+    const options = (question.choices?.length ? question.choices : ['True', 'False']).map((c) => ({ value: c, label: c }));
     area.innerHTML = `<div class="choice-list">${options.map(({ value, label }) => {
       const isSelected = answer === value;
       const isCorrectChoice = locked && value === question.correctAnswer;
@@ -1420,9 +1390,7 @@ function isObjectiveType(type) {
   return (
     type === 'multipleChoice' ||
     type === 'trueFalse' ||
-    type === 'checkCross' ||
     type === 'identification' ||
-    type === 'identificationChoices' ||
     type === 'matching' ||
     type === 'calculation'
   );
@@ -1443,10 +1411,10 @@ function isAnswered(question, answer) {
 
 function gradeObjectiveQuestion(question, answer) {
   if (!isAnswered(question, answer)) return false;
-  if (question.type === 'multipleChoice' || question.type === 'trueFalse' || question.type === 'checkCross') {
+  if (question.type === 'multipleChoice' || question.type === 'trueFalse') {
     return normalize(answer) === normalize(question.correctAnswer);
   }
-  if (question.type === 'identification' || question.type === 'identificationChoices') {
+  if (question.type === 'identification') {
     const accepted = (question.acceptableAnswers?.length ? question.acceptableAnswers : [question.correctAnswer]).map(normalize);
     return accepted.includes(normalize(answer));
   }
@@ -2017,15 +1985,15 @@ function buildStandaloneQuizHtml(quiz, examTitle, subject) {
 
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   function normalize(s){ return String(s==null?'':s).toLowerCase().trim().replace(/[.,!?;:'"()]/g,'').replace(/\\s+/g,' '); }
-  function isObjective(t){ return ['multipleChoice','trueFalse','checkCross','identification','identificationChoices','matching','calculation'].indexOf(t) !== -1; }
+  function isObjective(t){ return ['multipleChoice','trueFalse','identification','matching','calculation'].indexOf(t) !== -1; }
   function isAnswered(q, a){
     if (q.type === 'matching') { var p = q.pairs||[]; return p.length>0 && p.every(function(_,i){ return a && a[i]!==undefined && a[i]!==''; }); }
     return a !== undefined && a !== null && String(a).trim() !== '';
   }
   function grade(q, a){
     if (!isAnswered(q,a)) return false;
-    if (q.type==='multipleChoice'||q.type==='trueFalse'||q.type==='checkCross') return normalize(a)===normalize(q.correctAnswer);
-    if (q.type==='identification'||q.type==='identificationChoices') {
+    if (q.type==='multipleChoice'||q.type==='trueFalse') return normalize(a)===normalize(q.correctAnswer);
+    if (q.type==='identification') {
       var accepted = (q.acceptableAnswers&&q.acceptableAnswers.length?q.acceptableAnswers:[q.correctAnswer]).map(normalize);
       return accepted.indexOf(normalize(a)) !== -1;
     }
@@ -2042,7 +2010,7 @@ function buildStandaloneQuizHtml(quiz, examTitle, subject) {
   var el = document.getElementById('questions');
   el.innerHTML = questions.map(function(q, qi){
     var opts = '';
-    if (q.type==='multipleChoice'||q.type==='identificationChoices') {
+    if (q.type==='multipleChoice') {
       var choices = (q.choices&&q.choices.length)?q.choices:[];
       opts = '<div class="choices" data-qi="'+qi+'">' + choices.map(function(c){
         return '<button type="button" class="choice" data-choice="'+esc(c)+'">'+esc(c)+'</button>';
@@ -2051,10 +2019,6 @@ function buildStandaloneQuizHtml(quiz, examTitle, subject) {
       opts = '<div class="choices" data-qi="'+qi+'">'
         + '<button type="button" class="choice" data-choice="True">True</button>'
         + '<button type="button" class="choice" data-choice="False">False</button></div>';
-    } else if (q.type==='checkCross') {
-      opts = '<div class="choices" data-qi="'+qi+'">'
-        + '<button type="button" class="choice" data-choice="True">✓ Check</button>'
-        + '<button type="button" class="choice" data-choice="False">✗ Cross</button></div>';
     } else if (q.type==='matching') {
       opts = '<div class="matching" data-qi="'+qi+'">' + (q.pairs||[]).map(function(p, pi){
         var rightOpts = (q.pairs||[]).map(function(x){return x.right;});
