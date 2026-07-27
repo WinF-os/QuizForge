@@ -351,6 +351,7 @@ function renderLibrary() {
           </button>
           ${showRetake ? `<button type="button" class="link-btn js-retake-exam">Retake</button>` : ''}
           <button type="button" class="link-btn js-edit-exam">Edit</button>
+          <button type="button" class="link-btn js-share-exam">Share</button>
         </div>
       </div>
     </article>
@@ -381,6 +382,7 @@ function renderLibrary() {
     });
     card.querySelector('.js-retake-exam')?.addEventListener('click', () => retakeQuizFromLibrary(exam));
     card.querySelector('.js-edit-exam')?.addEventListener('click', () => editQuizFromLibrary(exam));
+    card.querySelector('.js-share-exam')?.addEventListener('click', () => shareQuizAsHtml(exam));
   });
   $('libraryList').querySelectorAll('.js-create-new').forEach((btn) => {
     btn.addEventListener('click', () => switchTab('create'));
@@ -1406,11 +1408,19 @@ function saveGeneratedQuizAndReturnToLibrary() {
 
 // Auto-save draft when user navigates away from quiz
 function setupAutoSave() {
-  // Prevent refresh during quiz
+  // Was: fired for ANY unfinished quiz sitting in state.quiz, even long
+  // after returning to Library/Home once it had been saved as a draft --
+  // state.quiz doesn't get cleared just because the screen changed. Scoped
+  // to actually being on the quiz-taking screen, which is what "warn during
+  // quiz taking" means. Note: no browser lets a page set its own
+  // beforeunload dialog text anymore (Chrome/Firefox/Safari all show a
+  // fixed generic "Leave site?" message regardless of e.returnValue) --
+  // that's a platform restriction, not something fixable here. What IS
+  // real: the answer is already saved before the prompt even appears, so a
+  // refresh the user goes through with anyway loses nothing.
   window.addEventListener('beforeunload', function(e) {
-    if (state.quiz && state.examTitle && !state.isQuizComplete) {
+    if (state.createStep === 'quiz' && state.quiz && state.examTitle && !state.isQuizComplete) {
       saveCurrentQuizToLibrary('draft');
-      // Show confirmation message
       e.preventDefault();
       e.returnValue = '';
       return '';
@@ -1670,6 +1680,209 @@ function editQuizFromLibrary(item) {
   showCreateStep('manualBuilder');
 }
 
+// Builds a single, fully self-contained HTML file that can take this exam
+// completely offline -- no dependency on QuizForge itself, no network call,
+// no external CSS/JS/fonts (everything inlined). Objective question types
+// grade themselves client-side with the same logic as the real app
+// (deliberately re-implemented inline, not shared code, since this file
+// has to stand entirely on its own once it leaves the app); essay
+// questions show the model answer instead of an AI grade, since there's no
+// Gemini key or network assumed once shared out.
+function buildStandaloneQuizHtml(quiz, examTitle, subject) {
+  const questions = quiz.questions || [];
+  const dataJson = JSON.stringify({ examTitle, subject, questions });
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(examTitle)} — QuizForge Exam</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 640px; margin: 0 auto; padding: 20px 16px 60px; line-height: 1.5; color: #12172B; background: #F5F7FC; }
+  h1 { font-size: 1.3rem; margin-bottom: 4px; }
+  .sub { color: #6b7280; font-size: 0.85rem; margin-bottom: 20px; }
+  .q { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin-bottom: 14px; background: #fff; }
+  .q-prompt { font-weight: 600; margin-bottom: 10px; }
+  .choice { display: block; width: 100%; text-align: left; padding: 10px 14px; margin-bottom: 6px; border: 1.5px solid #e5e7eb; border-radius: 8px; background: none; font-size: 0.92rem; cursor: pointer; font-family: inherit; }
+  .choice.sel { border-color: #1B2E8F; background: #E7EAFB; font-weight: 700; }
+  .choice.correct { border-color: #22B27D; background: #e8f8f1; }
+  .choice.incorrect { border-color: #E0455C; background: #fdecee; }
+  input[type=text], textarea { width: 100%; padding: 10px 12px; border: 1.5px solid #e5e7eb; border-radius: 8px; font-size: 0.92rem; box-sizing: border-box; font-family: inherit; }
+  select { width: 100%; padding: 8px; border: 1.5px solid #e5e7eb; border-radius: 8px; font-size: 0.9rem; font-family: inherit; }
+  .match-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .match-row span { flex: 1; font-weight: 600; font-size: 0.88rem; }
+  .match-row select { flex: 1; }
+  .ans-note { margin-top: 10px; padding: 10px; background: #f3f4f6; border-radius: 8px; font-size: 0.85rem; }
+  #btnSubmit { width: 100%; padding: 14px; background: #1B2E8F; color: #fff; border: none; border-radius: 999px; font-size: 1rem; font-weight: 700; cursor: pointer; margin-top: 10px; font-family: inherit; }
+  #btnSubmit:disabled { opacity: 0.6; }
+  #score { text-align: center; padding: 20px; background: #1B2E8F; color: #fff; border-radius: 16px; margin-bottom: 20px; display: none; }
+  #score .pct { font-size: 2.2rem; font-weight: 800; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #12172B; color: #E5E7EB; }
+    .q { background: #1a1f36; border-color: #2A2F45; }
+    .choice { border-color: #2A2F45; color: #E5E7EB; }
+    input, textarea, select { background: #1a1f36; border-color: #2A2F45; color: #E5E7EB; }
+    .ans-note { background: #232a47; }
+  }
+</style>
+</head>
+<body>
+<h1>${esc(examTitle)}</h1>
+<p class="sub">${esc(subject || 'General')} &bull; ${questions.length} Questions &bull; Shared from QuizForge (offline copy, not synced back)</p>
+<div id="score"><div class="pct" id="scorePct"></div><div id="scoreSummary"></div></div>
+<div id="questions"></div>
+<button id="btnSubmit" type="button">Submit Answers</button>
+<script>
+(function(){
+  var DATA = ${dataJson};
+  var questions = DATA.questions;
+  var answers = {};
+  var submitted = false;
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function normalize(s){ return String(s==null?'':s).toLowerCase().trim().replace(/[.,!?;:'"()]/g,'').replace(/\\s+/g,' '); }
+  function isObjective(t){ return ['multipleChoice','trueFalse','checkCross','identification','identificationChoices','matching','calculation'].indexOf(t) !== -1; }
+  function isAnswered(q, a){
+    if (q.type === 'matching') { var p = q.pairs||[]; return p.length>0 && p.every(function(_,i){ return a && a[i]!==undefined && a[i]!==''; }); }
+    return a !== undefined && a !== null && String(a).trim() !== '';
+  }
+  function grade(q, a){
+    if (!isAnswered(q,a)) return false;
+    if (q.type==='multipleChoice'||q.type==='trueFalse'||q.type==='checkCross') return normalize(a)===normalize(q.correctAnswer);
+    if (q.type==='identification'||q.type==='identificationChoices') {
+      var accepted = (q.acceptableAnswers&&q.acceptableAnswers.length?q.acceptableAnswers:[q.correctAnswer]).map(normalize);
+      return accepted.indexOf(normalize(a)) !== -1;
+    }
+    if (q.type==='calculation') {
+      var given = parseFloat(String(a).replace(/,/g,'')), expected = parseFloat(String(q.correctAnswer).replace(/,/g,''));
+      if (isNaN(given)||isNaN(expected)) return false;
+      var tol = Math.max(0.01, Math.abs(expected)*0.01);
+      return Math.abs(given-expected) <= tol;
+    }
+    if (q.type==='matching') return (q.pairs||[]).every(function(p,i){ return a[i]===p.right; });
+    return false;
+  }
+
+  var el = document.getElementById('questions');
+  el.innerHTML = questions.map(function(q, qi){
+    var opts = '';
+    if (q.type==='multipleChoice'||q.type==='identificationChoices') {
+      var choices = (q.choices&&q.choices.length)?q.choices:[];
+      opts = '<div class="choices" data-qi="'+qi+'">' + choices.map(function(c){
+        return '<button type="button" class="choice" data-choice="'+esc(c)+'">'+esc(c)+'</button>';
+      }).join('') + '</div>';
+    } else if (q.type==='trueFalse') {
+      opts = '<div class="choices" data-qi="'+qi+'">'
+        + '<button type="button" class="choice" data-choice="True">True</button>'
+        + '<button type="button" class="choice" data-choice="False">False</button></div>';
+    } else if (q.type==='checkCross') {
+      opts = '<div class="choices" data-qi="'+qi+'">'
+        + '<button type="button" class="choice" data-choice="True">✓ Check</button>'
+        + '<button type="button" class="choice" data-choice="False">✗ Cross</button></div>';
+    } else if (q.type==='matching') {
+      opts = '<div class="matching" data-qi="'+qi+'">' + (q.pairs||[]).map(function(p, pi){
+        var rightOpts = (q.pairs||[]).map(function(x){return x.right;});
+        return '<div class="match-row"><span>'+esc(p.left)+'</span><select data-pi="'+pi+'"><option value="">Select…</option>'
+          + rightOpts.map(function(r){ return '<option value="'+esc(r)+'">'+esc(r)+'</option>'; }).join('')
+          + '</select></div>';
+      }).join('') + '</div>';
+    } else if (q.type==='essay') {
+      opts = '<textarea rows="4" data-qi="'+qi+'" placeholder="Write your answer…"></textarea>';
+    } else {
+      opts = '<input type="text" data-qi="'+qi+'" placeholder="'+(q.type==='calculation'?'Enter a numeric answer':'Type your answer')+'">';
+    }
+    return '<div class="q" id="q'+qi+'"><div class="q-prompt">'+(qi+1)+'. '+esc(q.prompt)+'</div>'+opts+'<div class="ans-note" id="note'+qi+'" style="display:none;"></div></div>';
+  }).join('');
+
+  el.querySelectorAll('.choices').forEach(function(box){
+    var qi = Number(box.dataset.qi);
+    box.querySelectorAll('.choice').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        if (submitted) return;
+        answers[qi] = btn.dataset.choice;
+        box.querySelectorAll('.choice').forEach(function(b){ b.classList.toggle('sel', b===btn); });
+      });
+    });
+  });
+  el.querySelectorAll('input[type=text], textarea').forEach(function(inp){
+    inp.addEventListener('input', function(){ answers[Number(inp.dataset.qi)] = inp.value; });
+  });
+  el.querySelectorAll('.matching select').forEach(function(sel){
+    sel.addEventListener('change', function(){
+      var qi = Number(sel.closest('.matching').dataset.qi), pi = Number(sel.dataset.pi);
+      answers[qi] = answers[qi] || {};
+      answers[qi][pi] = sel.value;
+    });
+  });
+
+  document.getElementById('btnSubmit').addEventListener('click', function(){
+    submitted = true;
+    var correctCount = 0, objectiveTotal = 0;
+    questions.forEach(function(q, qi){
+      var a = answers[qi];
+      var note = document.getElementById('note'+qi);
+      if (isObjective(q.type)) {
+        objectiveTotal++;
+        var ok = grade(q, a);
+        if (ok) correctCount++;
+        note.style.display = 'block';
+        note.innerHTML = (ok ? '✅ Correct' : '❌ Correct answer: ' + esc(q.type==='matching' ? (q.pairs||[]).map(function(p){return p.left+' → '+p.right;}).join('; ') : q.correctAnswer))
+          + (q.explanation ? '<br>' + esc(q.explanation) : '');
+        var box = document.getElementById('q'+qi).querySelector('.choices');
+        if (box) box.querySelectorAll('.choice').forEach(function(b){
+          if (b.dataset.choice === q.correctAnswer) b.classList.add('correct');
+          else if (b.classList.contains('sel')) b.classList.add('incorrect');
+          b.disabled = true;
+        });
+      } else {
+        note.style.display = 'block';
+        note.innerHTML = 'Essay question — not auto-graded offline.' + (q.expectedAnswer ? '<br><strong>Model answer:</strong> ' + esc(q.expectedAnswer) : '');
+      }
+    });
+    var pct = objectiveTotal ? Math.round((correctCount/objectiveTotal)*100) : 0;
+    document.getElementById('score').style.display = 'block';
+    document.getElementById('scorePct').textContent = pct + '%';
+    document.getElementById('scoreSummary').textContent = correctCount + ' / ' + objectiveTotal + ' objective correct';
+    document.getElementById('btnSubmit').disabled = true;
+    document.getElementById('btnSubmit').textContent = 'Submitted';
+    window.scrollTo(0,0);
+  });
+})();
+</script>
+</body>
+</html>`;
+}
+
+// Native share sheet (Messenger, etc.) when the browser/OS supports sharing
+// files; falls back to a plain download (desktop browsers, or wherever the
+// Web Share API with files isn't available) so the feature still works
+// everywhere, just less directly.
+async function shareQuizAsHtml(item) {
+  if (!item || !item.quizData) return;
+  const title = item.examTitle || item.title || 'Quiz';
+  const html = buildStandaloneQuizHtml(item.quizData, title, item.subject);
+  const filename = `${title.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '') || 'quiz'}.html`;
+  const file = new File([html], filename, { type: 'text/html' });
+
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title, text: `${title} — open this file in a browser to take the quiz.` });
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') return; // user backed out of the share sheet -- not a failure
+    }
+  }
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 // Open a completed exam read-only, reusing the same results renderer a
 // live "Finish exam" uses -- restores the saved answers/grades instead of
 // the live in-progress state.
@@ -1688,3 +1901,163 @@ function viewCompletedExam(item) {
   showCreateStep('results');
   renderResults();
 }
+
+/* ============ Backup & Restore ============ */
+// Local (phone) backup/restore always works, no account needed. Google
+// Drive backup follows the exact same Google Identity Services token-flow
+// pattern as Winfinity's own Drive backup (raw fetch to the Drive REST API,
+// no gapi client library) -- but needs its OWN OAuth client, since a
+// client ID is tied to one app's identity/consent screen. Disabled
+// entirely (buttons hidden) until config.js's GOOGLE_CLIENT_ID is filled
+// in -- see README.md for how to create one.
+
+function driveConfigured() {
+  return typeof GOOGLE_CLIENT_ID === 'string' && GOOGLE_CLIENT_ID.trim().length > 0;
+}
+
+function buildBackupPayload() {
+  return {
+    app: 'QuizForge',
+    version: APP_VERSION,
+    exportedAt: new Date().toISOString(),
+    library: LIBRARY_EXAMS,
+  };
+}
+
+function applyBackupPayload(payload) {
+  if (!payload || !Array.isArray(payload.library)) throw new Error('This file doesn\'t look like a QuizForge backup.');
+  LIBRARY_EXAMS.length = 0;
+  LIBRARY_EXAMS.push(...payload.library);
+  saveLibraryExams();
+  renderLibrary();
+  renderHome();
+}
+
+function downloadBackupJSON() {
+  const payload = buildBackupPayload();
+  const filename = `quizforge-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  const file = new File([JSON.stringify(payload, null, 2)], filename, { type: 'application/json' });
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  $('backupStatusText').textContent = `Backed up ${payload.library.length} exam(s) to your device.`;
+}
+
+$('btnBackupPhone').addEventListener('click', downloadBackupJSON);
+
+$('btnRestorePhone').addEventListener('click', () => $('restoreFileInput').click());
+$('restoreFileInput').addEventListener('change', async (event) => {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const payload = JSON.parse(text);
+    if (!confirm(`Restore ${payload.library?.length ?? '?'} exam(s) from this backup? This replaces your current library on this device.`)) return;
+    applyBackupPayload(payload);
+    $('backupStatusText').textContent = `Restored ${payload.library.length} exam(s) from ${esc(file.name)}.`;
+  } catch (e) {
+    $('backupStatusText').textContent = `Could not restore that file: ${e.message}`;
+  }
+});
+
+/* ---- Google Drive ---- */
+
+let driveTokenClient = null;
+let driveAccessToken = null;
+const DRIVE_FILE_ID_KEY = 'quizforge-drive-file-id';
+
+function refreshDriveUi() {
+  const configured = driveConfigured();
+  $('btnConnectDrive').hidden = !configured;
+  if (!configured) {
+    $('driveStatus').textContent = 'Not set up yet -- see README.md for how to enable Google Drive backup.';
+    $('driveActionsRow').hidden = true;
+    return;
+  }
+  const connected = !!driveAccessToken;
+  $('driveActionsRow').hidden = !connected;
+  $('btnConnectDrive').hidden = connected;
+  $('driveStatus').textContent = connected ? 'Connected.' : 'Not connected.';
+}
+
+function initDrive() {
+  if (!driveConfigured() || typeof google === 'undefined' || !google.accounts?.oauth2) return;
+  driveTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
+    callback: (resp) => {
+      if (resp.error) { $('backupStatusText').textContent = `Google sign-in failed: ${resp.error}`; return; }
+      driveAccessToken = resp.access_token;
+      refreshDriveUi();
+      $('backupStatusText').textContent = 'Connected to Google Drive.';
+    },
+  });
+}
+
+$('btnConnectDrive').addEventListener('click', () => {
+  if (!driveTokenClient) { $('backupStatusText').textContent = 'Google sign-in is still loading -- try again in a moment.'; return; }
+  driveTokenClient.requestAccessToken({ prompt: 'consent' });
+});
+
+async function saveToDrive() {
+  if (!driveAccessToken) return;
+  $('backupStatusText').textContent = 'Backing up to Drive…';
+  const payload = buildBackupPayload();
+  const existingId = localStorage.getItem(DRIVE_FILE_ID_KEY);
+  const boundary = 'quizforge-backup-boundary';
+  const metadata = { name: 'quizforge-backup.json', mimeType: 'application/json' };
+  const body =
+    `--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(payload)}\r\n--${boundary}--`;
+
+  try {
+    const url = existingId
+      ? `https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=multipart`
+      : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
+    const res = await fetch(url, {
+      method: existingId ? 'PATCH' : 'POST',
+      headers: { Authorization: `Bearer ${driveAccessToken}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body,
+    });
+    if (!res.ok) throw new Error(`Drive returned HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.id) localStorage.setItem(DRIVE_FILE_ID_KEY, data.id);
+    $('backupStatusText').textContent = `Backed up ${payload.library.length} exam(s) to Google Drive.`;
+  } catch (e) {
+    $('backupStatusText').textContent = `Drive backup failed: ${e.message}`;
+  }
+}
+$('btnBackupDrive').addEventListener('click', saveToDrive);
+
+async function restoreFromDrive() {
+  if (!driveAccessToken) return;
+  const fileId = localStorage.getItem(DRIVE_FILE_ID_KEY);
+  if (!fileId) { $('backupStatusText').textContent = 'No Drive backup found yet -- back up first.'; return; }
+  $('backupStatusText').textContent = 'Checking Drive backup…';
+  try {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      headers: { Authorization: `Bearer ${driveAccessToken}` },
+    });
+    if (!res.ok) throw new Error(`Drive returned HTTP ${res.status}`);
+    const payload = await res.json();
+    if (!confirm(`Restore ${payload.library?.length ?? '?'} exam(s) from your Google Drive backup? This replaces your current library on this device.`)) return;
+    applyBackupPayload(payload);
+    $('backupStatusText').textContent = `Restored ${payload.library.length} exam(s) from Google Drive.`;
+  } catch (e) {
+    $('backupStatusText').textContent = `Drive restore failed: ${e.message}`;
+  }
+}
+$('btnRestoreDrive').addEventListener('click', restoreFromDrive);
+
+refreshDriveUi();
+// google.accounts may not have finished loading (the GIS script is async)
+// by the time this file runs -- try immediately, then again shortly after
+// in case it wasn't ready yet, rather than requiring a page reload.
+initDrive();
+setTimeout(initDrive, 1500);

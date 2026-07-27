@@ -338,6 +338,8 @@ textarea.text-input { resize: vertical; font-family: inherit; }
 .key-row { display: flex; align-items: center; gap: 8px; }
 .key-row .text-input { flex: 1; }
 .key-row-masked { font-size: 0.78rem; color: var(--color-text-muted); white-space: nowrap; }
+.backup-btn-row { display: flex; gap: var(--space-3); margin-top: 8px; }
+.backup-btn-row .btn { flex: 1; }
 .source-cards { display: flex; flex-direction: column; gap: var(--space-3); }
 .source-card { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-card); padding: var(--space-5) var(--space-4); width: 100%; }
 .source-card-icon { width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
@@ -416,6 +418,7 @@ textarea.text-input { resize: vertical; font-family: inherit; }
 .matching-select { flex: 1; }
 .quiz-runner-nav { display: flex; gap: var(--space-3); }
 .quiz-runner-nav .btn { flex: 1; }
+.quiz-safety-note { font-size: 0.76rem; color: var(--color-text-muted); text-align: center; margin-top: var(--space-2); }
 
 /* Results */
 .score-card { text-align: center; background: linear-gradient(155deg, var(--color-primary) 0%, var(--color-primary-dark) 100%); color: #fff; border: none; }

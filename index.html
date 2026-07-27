@@ -297,6 +297,7 @@
           <button type="button" class="btn btn--outline" id="btnQuizPrev">Previous</button>
           <button type="button" class="btn btn--primary" id="btnQuizNext">Next</button>
         </div>
+        <p class="quiz-safety-note">💾 Your answers are saved automatically as you go — avoid refreshing anyway, since your browser may still ask before leaving.</p>
       </div>
 
       <div class="create-step" id="stepResults" hidden>
@@ -394,6 +395,29 @@
         <p class="section-heading">Data</p>
         <p class="screen-sub" style="margin-top:8px;">Your exam library (completed exams and drafts) is saved in this browser's storage and stays there across visits — see the Library tab. Clearing your browser data will remove it.</p>
       </div>
+
+      <div class="card">
+        <p class="section-heading">Backup &amp; Restore</p>
+        <p class="screen-sub" style="margin-top:6px;">Save a copy of your exam library so it survives a lost phone, a cleared browser, or moving to a new device.</p>
+
+        <p class="field-label" style="margin-top:14px;">On This Device</p>
+        <div class="backup-btn-row">
+          <button type="button" class="btn btn--outline" id="btnBackupPhone">📱 Back Up Now</button>
+          <button type="button" class="btn btn--outline" id="btnRestorePhone">Restore File</button>
+        </div>
+        <input type="file" id="restoreFileInput" accept="application/json" hidden>
+
+        <p class="field-label" style="margin-top:16px;">Google Drive</p>
+        <p class="screen-sub" id="driveStatus" style="margin-top:4px;">Not connected.</p>
+        <div class="backup-btn-row">
+          <button type="button" class="btn btn--outline" id="btnConnectDrive">☁️ Connect Google Drive</button>
+        </div>
+        <div class="backup-btn-row" id="driveActionsRow" hidden>
+          <button type="button" class="btn btn--outline" id="btnBackupDrive">Back Up to Drive</button>
+          <button type="button" class="btn btn--outline" id="btnRestoreDrive">Restore from Drive</button>
+        </div>
+        <p class="screen-sub" id="backupStatusText" style="margin-top:8px;"></p>
+      </div>
     </section>
 
   </main>
@@ -450,6 +474,7 @@
 
 </div>
 
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="config.js"></script>
 <script src="app.js"></script>
 </body>
