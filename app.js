@@ -28,6 +28,7 @@ const state = {
   geminiApiKeys: loadGeminiKeys(),
   activeKeyIndex: 0,
   showCorrectAnswers: false,
+  currentLibraryId: null, // library entry (if any) the in-progress quiz was resumed/reviewed from -- lets a re-save update it instead of always inserting a duplicate
 };
 
 const QUESTION_TYPES = [
@@ -52,21 +53,25 @@ const TYPE_LABELS = {
   essay: 'Essay',
 };
 
-const RECENT_EXAMS = [
-  { title: 'Introduction to Algorithms', meta: 'Created 2 days ago', questionCount: 45 },
-  { title: 'System Design Patterns', meta: 'Edited 4 hours ago', questionCount: 20 },
-  { title: 'Relational Databases Midterm', meta: 'Created 1 week ago', questionCount: 30 },
-];
-
 const SUGGESTED_TOPICS = ['Big O Notation', 'Graph Theory Basics', 'Sorting Efficiencies'];
 
-const LIBRARY_EXAMS = [
-  { subject: 'Biology', title: 'Cellular Respiration Final', questionCount: 45, date: 'Oct 12, 2023', excerpt: 'Compare and contrast aerobic and anaerobic pathways, identifying key ATP yields for...', status: 'completed', badge: '12', tag: 'biology' },
-  { subject: 'History', title: 'Industrial Revolution Quiz', questionCount: 20, date: 'Oct 08, 2023', excerpt: 'Map the migration patterns of rural populations toward urban centers during the 1840s...', status: 'completed', badge: '9', tag: 'history' },
-  { subject: 'Mathematics', title: 'Calculus AB: Integrals', questionCount: 32, date: 'Sep 28, 2023', excerpt: 'Solve for the area under the curve using Riemann sums and the Fundamental Theorem...', status: 'completed', badge: 'AP', tag: 'mathematics' },
-  { subject: 'Literature', title: 'Modernism in Poetry', questionCount: 15, date: 'Sep 15, 2023', excerpt: "Analyze T.S. Eliot's use of fragmentation in 'The Waste Land' as a reflection of...", status: 'completed', badge: '12', tag: 'literature' },
-  { subject: 'Chemistry', title: 'Organic Chemistry I: Basics', questionCount: 50, date: 'Aug 30, 2023', excerpt: 'Identify functional groups in complex carbon chains and predict IUPAC naming conventions...', status: 'completed', badge: 'U', tag: 'chemistry' },
-];
+// Real, persisted exam library -- was previously 5 hardcoded fake entries
+// (Biology/History/etc, dated 2023) that reappeared on every reload no
+// matter what the user actually did, because nothing was ever saved to
+// localStorage. Loaded once here, saved after every mutation below.
+function loadLibraryExams() {
+  try {
+    return JSON.parse(localStorage.getItem('quizforge-library') || '[]');
+  } catch (e) {
+    return [];
+  }
+}
+function saveLibraryExams() {
+  try {
+    localStorage.setItem('quizforge-library', JSON.stringify(LIBRARY_EXAMS));
+  } catch (e) { /* storage unavailable/full -- exams still work in-memory this session */ }
+}
+const LIBRARY_EXAMS = loadLibraryExams();
 
 /* ============ Helpers ============ */
 
@@ -96,28 +101,6 @@ function shuffleArray(array) {
     [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
   }
   return newArray;
-}
-
-// Save quiz to library
-function saveQuizToLibrary() {
-  if (!state.quiz || !state.examTitle) return;
-  
-  // Create a library entry from the current quiz
-  const newExam = {
-    subject: state.subject || 'General',
-    title: state.examTitle,
-    questionCount: state.quiz.questions ? state.quiz.questions.length : 0,
-    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-    excerpt: state.quiz.questions && state.quiz.questions[0] ? 
-      (state.quiz.questions[0].prompt || 'Exam generated from uploaded material') : 
-      'Exam generated from uploaded material',
-    status: 'completed',
-    badge: state.quiz.questions ? state.quiz.questions.length.toString() : '0',
-    tag: state.subject ? state.subject.toLowerCase().replace(/\s+/g, '-') : 'general'
-  };
-  
-  // Add to the library exams list
-  LIBRARY_EXAMS.unshift(newExam);
 }
 
 function applyTheme(theme) {
@@ -274,25 +257,41 @@ document.querySelectorAll('.bottom-nav-item').forEach((btn) => {
   btn.addEventListener('click', () => switchTab(btn.dataset.target));
 });
 
-$('btnQuickCreate').addEventListener('click', () => switchTab('create'));
+// Was just switchTab('create') -- showed whatever create-flow state was
+// last active (including, after the Library fixes above, a stale
+// currentLibraryId pointing at whatever exam was last resumed/reviewed,
+// which would then silently overwrite that unrelated library entry the
+// next time anything auto-saved). "Quick Create" should mean a genuinely
+// fresh quiz.
+$('btnQuickCreate').addEventListener('click', () => { resetCreateFlow(); switchTab('create'); });
 $('btnViewAllRecent').addEventListener('click', () => switchTab('library'));
 $('btnExploreBank').addEventListener('click', () => switchTab('library'));
 
 /* ============ Home ============ */
 
 function renderHome() {
-  $('recentList').innerHTML = RECENT_EXAMS.map((exam) => `
+  // Recent Exams -- derived from the real, persisted library (most recently
+  // saved first, since every save unshift()s) instead of a separate static
+  // demo array that never reflected anything the user actually did.
+  const recent = LIBRARY_EXAMS.slice(0, 3);
+  $('recentList').innerHTML = recent.length ? recent.map((exam) => `
     <li class="recent-item">
       <span class="recent-item-icon">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 8-4 4 4 4M15 8l4 4-4 4" /></svg>
       </span>
       <span class="recent-item-body">
         <span class="recent-item-title">${esc(exam.title)}</span>
-        <span class="recent-item-meta">${esc(exam.meta)} &bull; ${exam.questionCount} Questions</span>
+        <span class="recent-item-meta">${exam.status === 'draft' ? 'Draft' : 'Completed'} &bull; ${esc(exam.date)} &bull; ${exam.questionCount} Questions</span>
       </span>
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6" /></svg>
     </li>
-  `).join('');
+  `).join('') : `<li class="empty-note">No exams yet — create your first one to see it here.</li>`;
+
+  const completedCount = LIBRARY_EXAMS.filter((e) => e.status === 'completed').length;
+  const draftCount = LIBRARY_EXAMS.filter((e) => e.status === 'draft').length;
+  $('homeExamsSummary').textContent = !LIBRARY_EXAMS.length
+    ? "You haven't created any exams yet — tap Quick Create to get started."
+    : `You have ${completedCount} completed exam${completedCount === 1 ? '' : 's'} and ${draftCount} draft${draftCount === 1 ? '' : 's'} awaiting completion.`;
 
   $('topicList').innerHTML = SUGGESTED_TOPICS.map((topic) => `
     <li class="topic-item"><span>${esc(topic)}</span><button type="button" class="topic-add-btn" aria-label="Add ${esc(topic)}">+</button></li>
@@ -302,12 +301,12 @@ function renderHome() {
 /* ============ Library ============ */
 
 $('btnLibCompleted').addEventListener('click', () => { state.libraryTab = 'completed'; renderLibrary(); });
-$('btnLibDrafts').addEventListener('click', () => { state.libraryTab = 'drafts'; renderLibrary(); });
+$('btnLibDrafts').addEventListener('click', () => { state.libraryTab = 'draft'; renderLibrary(); });
 $('librarySearchInput').addEventListener('input', (event) => { state.librarySearch = event.target.value; renderLibrary(); });
 
 function renderLibrary() {
   $('btnLibCompleted').classList.toggle('is-active', state.libraryTab === 'completed');
-  $('btnLibDrafts').classList.toggle('is-active', state.libraryTab === 'drafts');
+  $('btnLibDrafts').classList.toggle('is-active', state.libraryTab === 'draft');
 
   const query = state.librarySearch.trim().toLowerCase();
   const filtered = LIBRARY_EXAMS.filter((exam) => {
@@ -317,13 +316,17 @@ function renderLibrary() {
   });
 
   if (!filtered.length) {
-    $('libraryList').innerHTML = `<p class="empty-note">${state.libraryTab === 'drafts' ? 'No drafts yet — unfinished exams will appear here.' : 'No exams match your search.'}</p>`;
+    const noneOfThisStatusAtAll = !LIBRARY_EXAMS.some((exam) => exam.status === state.libraryTab);
+    const message = state.libraryTab === 'draft'
+      ? 'No drafts yet — unfinished exams will appear here.'
+      : (noneOfThisStatusAtAll ? 'No completed exams yet — finish a quiz to see it here.' : 'No exams match your search.');
+    $('libraryList').innerHTML = `<p class="empty-note">${message}</p>`;
     return;
   }
 
   const cards = filtered.map((exam, index) => `
-    <article class="exam-card exam-card--tag--${exam.tag}">
-      <span class="exam-tag tag--${exam.tag}">${esc(exam.subject)}</span>
+    <article class="exam-card exam-card--tag--${esc(exam.tag)}">
+      <span class="exam-tag tag--${esc(exam.tag)}">${esc(exam.subject)}</span>
       <h3 class="exam-card-title">${esc(exam.title)}</h3>
       <p class="exam-card-meta">${exam.questionCount} Questions &bull; ${esc(exam.date)}</p>
       <p class="exam-card-excerpt">&ldquo;${esc(exam.excerpt)}&rdquo;</p>
@@ -344,7 +347,20 @@ function renderLibrary() {
   `).join('');
 
   $('libraryList').innerHTML = cards;
-  $('libraryList').querySelectorAll('.js-open-exam, .js-create-new').forEach((btn) => {
+  // Was: every "Open Exam" button, on every card, blindly switched to the
+  // Create tab regardless of which exam was clicked -- clicking any saved
+  // exam did the same generic thing as clicking nothing at all. Now each
+  // button is wired to its own specific exam: a draft resumes into the quiz
+  // (via the now-fixed startQuizFromLibrary), a completed exam opens a
+  // read-only results review.
+  const openButtons = $('libraryList').querySelectorAll('.js-open-exam');
+  filtered.forEach((exam, i) => {
+    openButtons[i].addEventListener('click', () => {
+      if (exam.status === 'draft') startQuizFromLibrary(exam);
+      else viewCompletedExam(exam);
+    });
+  });
+  $('libraryList').querySelectorAll('.js-create-new').forEach((btn) => {
     btn.addEventListener('click', () => switchTab('create'));
   });
 }
@@ -405,6 +421,7 @@ function resetCreateFlow() {
   state.answers = {};
   state.essayGrades = {};
   state.quizIndex = 0;
+  state.currentLibraryId = null; // starting a genuinely new quiz -- not continuing whatever library entry (if any) was previously being resumed/reviewed
   $('examTitleInput').value = '';
   $('subjectSelect').value = '';
   $('pastedTextArea').value = '';
@@ -927,7 +944,7 @@ $('btnQuizNext').addEventListener('click', () => {
     state.quizIndex += 1;
     renderQuizQuestion();
   } else {
-    renderResults();
+    renderResults(true);
     showCreateStep('results');
   }
 });
@@ -942,6 +959,7 @@ $('btnRepeatQuiz').addEventListener('click', () => {
   state.answers = {};
   state.essayGrades = {};
   state.quizIndex = 0;
+  state.isQuizComplete = false; // was never reset here, so a repeat attempt could never be saved as a new completion
   renderQuizQuestion();
   showCreateStep('quiz');
 });
@@ -977,13 +995,24 @@ function gradeObjectiveQuestion(question, answer) {
 
 /* ============ Results ============ */
 
-async function renderResults() {
+// justFinished=true only for a live "Finish exam" completion -- distinct
+// from re-opening an already-saved completed exam via viewCompletedExam(),
+// which also calls this function to reuse the same rendering but must NOT
+// save a fresh duplicate library entry every time someone reviews it.
+async function renderResults(justFinished) {
   const questions = state.quiz.questions;
   const objectiveQuestions = questions.filter((q) => isObjectiveType(q.type));
   const essayQuestions = questions.filter((q) => q.type === 'essay');
   const objectiveCorrect = objectiveQuestions.filter((q) => gradeObjectiveQuestion(q, state.answers[q.id])).length;
 
   $('resultsExamTitle').textContent = `${state.examTitle || 'Exam'} • Results`;
+  // "Save as Draft" only makes sense right after a live finish -- it was
+  // visible even when reviewing an already-completed exam via
+  // viewCompletedExam(), and since saveCurrentQuizToLibrary() now updates
+  // the matching entry in place (see currentLibraryId), clicking it during
+  // a review would have silently downgraded that completed exam back to a
+  // draft.
+  $('btnSaveAsDraft').hidden = !justFinished;
 
   function paintScore() {
     const essayScores = essayQuestions.map((q) => state.essayGrades[q.id]?.score).filter((s) => typeof s === 'number');
@@ -1041,6 +1070,17 @@ async function renderResults() {
     paintScore();
     paintList();
   }
+
+  // Real completion save -- previously nothing ever called the old
+  // saveQuizToLibrary()/similar at all, so finishing a quiz never actually
+  // added anything to the library or Recent Exams no matter how many exams
+  // were completed. Guarded by isQuizComplete so essay-grading's own
+  // paintScore()/paintList() re-render above (and any future re-render of
+  // this same screen) can't save a second duplicate entry.
+  if (justFinished && !state.isQuizComplete) {
+    state.isQuizComplete = true;
+    saveCurrentQuizToLibrary('completed');
+  }
 }
 
 $('btnCreateAnother').addEventListener('click', resetCreateFlow);
@@ -1053,69 +1093,51 @@ renderHome();
 resetCreateFlow();
 document.querySelector('.app-header-version').textContent = APP_VERSION;
 
-// Save quiz to library function (added at end)
-function saveQuizToLibrary() {
-  if (!state.quiz || !state.examTitle) return;
-  
-  // Create a library entry from the current quiz
-  const newExam = {
-    subject: state.subject || 'General',
-    title: state.examTitle,
-    questionCount: state.quiz.questions ? state.quiz.questions.length : 0,
-    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-    excerpt: state.quiz.questions && state.quiz.questions[0] ? 
-      (state.quiz.questions[0].prompt || 'Exam generated from uploaded material') : 
-      'Exam generated from uploaded material',
-    status: 'completed',
-    badge: state.quiz.questions ? state.quiz.questions.length.toString() : '0',
-    tag: state.subject ? state.subject.toLowerCase().replace(/\s+/g, '-') : 'general'
-  };
-  
-  // Add to the library exams list
-  LIBRARY_EXAMS.unshift(newExam);
-}
-
-// Create a new quiz in draft mode -- returns the created exam (or undefined
-// if there was nothing to save) so callers can tell whether it actually
-// happened; a prior version of this function didn't return anything, so
-// its "if (savedExam)" call site silently never fired the success message.
-function saveAsDraft() {
+// Was two separate, near-duplicate functions (saveQuizToLibrary,
+// saveAsDraft) that each built their own newExam object -- consolidated
+// into one, since "completed" and "draft" only ever differed by status and
+// a couple of extra draft-only fields. Also now persists (see
+// saveLibraryExams above) and, for completed exams, captures the actual
+// answers/grades so a finished exam can be reviewed later instead of just
+// remembered as having existed.
+function saveCurrentQuizToLibrary(status) {
   if (!state.quiz || !state.examTitle) return undefined;
 
+  // Upsert, not always-insert: resuming a draft (startQuizFromLibrary sets
+  // state.currentLibraryId) and then triggering another auto-save -- e.g.
+  // closing the tab again before finishing -- previously created a second,
+  // near-identical duplicate entry every single time, since the old code
+  // always unshifted a brand new object. Found via an actual resume-then-
+  // reload test, not just reading the code.
+  const existing = state.currentLibraryId
+    ? LIBRARY_EXAMS.find((e) => e.id === state.currentLibraryId)
+    : null;
+
   const newExam = {
+    id: existing ? existing.id : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     subject: state.subject || 'General',
     title: state.examTitle,
+    examTitle: state.examTitle,
     questionCount: state.quiz.questions ? state.quiz.questions.length : 0,
     date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-    excerpt: state.quiz.questions && state.quiz.questions[0] ?
-      (state.quiz.questions[0].prompt || 'Exam generated from uploaded material') :
-      'Exam generated from uploaded material',
-    status: 'draft',
+    excerpt: state.quiz.questions && state.quiz.questions[0]
+      ? (state.quiz.questions[0].prompt || 'Exam generated from uploaded material')
+      : 'Exam generated from uploaded material',
+    status,
     badge: state.quiz.questions ? state.quiz.questions.length.toString() : '0',
     tag: state.subject ? state.subject.toLowerCase().replace(/\s+/g, '-') : 'general',
-    history: [],
-    isDraft: true,
-    // Store the quiz data for drafts
     quizData: state.quiz,
-    examTitle: state.examTitle,
-    subject: state.subject
+    answers: status === 'completed' ? { ...state.answers } : undefined,
+    essayGrades: status === 'completed' ? { ...state.essayGrades } : undefined,
   };
 
-  LIBRARY_EXAMS.unshift(newExam);
-  return newExam;
-}
-
-// Add a score to quiz history
-function addScoreToHistory(examTitle, score, date) {
-  const exam = LIBRARY_EXAMS.find(e => e.title === examTitle);
-  if (exam && exam.history) {
-    exam.history.push({
-      score: score,
-      date: date || new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    });
-    // Keep only last 10 attempts
-    exam.history = exam.history.slice(-10);
+  if (existing) {
+    LIBRARY_EXAMS.splice(LIBRARY_EXAMS.indexOf(existing), 1);
   }
+  LIBRARY_EXAMS.unshift(newExam);
+  state.currentLibraryId = newExam.id;
+  saveLibraryExams();
+  return newExam;
 }
 
 // Auto-save draft when user navigates away from quiz
@@ -1123,7 +1145,7 @@ function setupAutoSave() {
   // Prevent refresh during quiz
   window.addEventListener('beforeunload', function(e) {
     if (state.quiz && state.examTitle && !state.isQuizComplete) {
-      saveAsDraft();
+      saveCurrentQuizToLibrary('draft');
       // Show confirmation message
       e.preventDefault();
       e.returnValue = '';
@@ -1263,26 +1285,54 @@ $('showCorrectAnswersToggle').addEventListener('change', (e) => {
 
 // Add the save functionality to results screen
 $('btnSaveAsDraft').addEventListener('click', () => {
-  const savedExam = saveAsDraft();
+  const savedExam = saveCurrentQuizToLibrary('draft');
   if (savedExam) {
     alert('Exam saved as draft! You can find it in your library.');
     switchTab('library');
   }
 });
 
-// Start a quiz from library item
+// Resume a draft from the library -- this previously called a
+// `renderQuiz()` that didn't exist anywhere in the file (would have thrown
+// ReferenceError the moment it ran) and `switchTab('quiz')`, but there is
+// no top-level "quiz" tab (quiz-taking is a *step* inside the Create tab);
+// it also read `item.quizData.subject`/`.examTitle`, but quizData only ever
+// held `{questions}` -- the real subject/examTitle live on `item` itself.
+// Never actually wired to a click handler before now, so none of this had
+// ever run. Fixed all of it and reset answer state so resuming a different
+// draft doesn't inherit whatever was left over from a previous quiz.
 function startQuizFromLibrary(item) {
   if (!item || !item.quizData) return;
-  
-  // Set the state to use this quiz data
-  state.quiz = {
-    questions: item.quizData.questions || []
-  };
-  state.subject = item.quizData.subject;
-  state.examTitle = item.quizData.examTitle;
+
+  state.quiz = { questions: item.quizData.questions || [] };
+  state.subject = item.subject;
+  state.examTitle = item.examTitle || item.title;
+  state.answers = {};
+  state.essayGrades = {};
+  state.quizIndex = 0;
   state.isQuizComplete = false;
-  
-  // Show the quiz interface
-  switchTab('quiz');
-  renderQuiz();
+  state.currentLibraryId = item.id || null; // lets a later auto-save update this same entry instead of inserting a duplicate
+
+  switchTab('create');
+  showCreateStep('quiz');
+  renderQuizQuestion();
+}
+
+// Open a completed exam read-only, reusing the same results renderer a
+// live "Finish exam" uses -- restores the saved answers/grades instead of
+// the live in-progress state.
+function viewCompletedExam(item) {
+  if (!item || !item.quizData) return;
+
+  state.quiz = { questions: item.quizData.questions || [] };
+  state.subject = item.subject;
+  state.examTitle = item.examTitle || item.title;
+  state.answers = item.answers ? { ...item.answers } : {};
+  state.essayGrades = item.essayGrades ? { ...item.essayGrades } : {};
+  state.isQuizComplete = true; // reviewing, not taking -- also stops beforeunload from re-saving this as a fresh draft
+  state.currentLibraryId = item.id || null;
+
+  switchTab('create');
+  showCreateStep('results');
+  renderResults();
 }

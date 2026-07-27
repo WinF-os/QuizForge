@@ -24,6 +24,7 @@
   --tag-mathematics: #12172B;
   --tag-literature: #E0455C;
   --tag-chemistry: #2E6BE0;
+  --tag-default: var(--color-primary);
 
   --radius-sm: 10px;
   --radius-md: 16px;
@@ -295,13 +296,13 @@ textarea.text-input { resize: vertical; font-family: inherit; }
 .library-search { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-faint); }
 .library-search input { border: none; outline: none; flex: 1; font-size: 0.9rem; background: transparent; color: var(--color-text); }
 .library-list { display: flex; flex-direction: column; gap: var(--space-4); }
-.exam-card { background: var(--color-surface); border: 1px solid var(--color-border); border-top: 4px solid var(--tag-mathematics); border-radius: var(--radius-md); box-shadow: var(--shadow-card); padding: var(--space-4) var(--space-5) var(--space-5); display: flex; flex-direction: column; gap: var(--space-2); }
+.exam-card { background: var(--color-surface); border: 1px solid var(--color-border); border-top: 4px solid var(--tag-default); border-radius: var(--radius-md); box-shadow: var(--shadow-card); padding: var(--space-4) var(--space-5) var(--space-5); display: flex; flex-direction: column; gap: var(--space-2); }
 .exam-card--tag--biology { border-top-color: var(--tag-biology); }
 .exam-card--tag--history { border-top-color: var(--tag-history); }
 .exam-card--tag--mathematics { border-top-color: var(--tag-mathematics); }
 .exam-card--tag--literature { border-top-color: var(--tag-literature); }
 .exam-card--tag--chemistry { border-top-color: var(--tag-chemistry); }
-.exam-tag { align-self: flex-start; font-size: 0.68rem; font-weight: 700; padding: 3px 10px; border-radius: var(--radius-pill); color: #fff; }
+.exam-tag { align-self: flex-start; font-size: 0.68rem; font-weight: 700; padding: 3px 10px; border-radius: var(--radius-pill); color: #fff; background: var(--tag-default); }
 .tag--biology { background: var(--tag-biology); }
 .tag--history { background: var(--tag-history); }
 .tag--mathematics { background: var(--tag-mathematics); }
