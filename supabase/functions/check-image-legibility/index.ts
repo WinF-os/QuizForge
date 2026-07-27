@@ -1,4 +1,29 @@
-import { handleOptions, jsonResponse } from '../_shared/cors.ts'
+// Inlined rather than imported from ../_shared/cors.ts -- the Supabase
+// dashboard's "New Function" single-file editor can't resolve a relative
+// import to a file outside that function's own source (confirmed: deploying
+// with the import failed with "Module not found ... _shared/cors.ts").
+// generate-quiz/grade-essay share that file via a different deploy path;
+// this function stays self-contained so the dashboard paste-and-deploy
+// flow this project actually uses always works for it.
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
+function handleOptions(req: Request): Response | null {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+  return null
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+}
 
 const GEMINI_MODEL = 'gemini-3.1-flash-lite'
 
