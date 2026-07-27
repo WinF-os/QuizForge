@@ -17,11 +17,15 @@ dist-ssr
 # capacitor-app/android/. `www/` is just a synced copy of the real web
 # files (index.html/app.js/etc, already tracked at the repo root) that
 # `npx cap sync` recreates -- not a second source of truth to track.
-# EXCEPTION: these two files hold real, hand-written native fixes (camera
+# EXCEPTION: these files hold real, hand-written native fixes (camera
 # runtime-permission request + the AndroidManifest CAMERA permission it
-# needs) that `npx cap add android` would NOT recreate -- losing them would
-# silently reintroduce the "Could not access the camera" bug on any future
-# from-scratch Android project regeneration. IMPORTANT: this is why the
+# needs; the back-button JS bridge; and build.gradle's versionCode, which
+# MUST increase with every real build or Android's installer forces an
+# uninstall instead of an in-place update -- found the hard way after every
+# single build this session shared the same hardcoded versionCode 1) that
+# `npx cap add android` would NOT recreate -- losing any of them would
+# silently reintroduce a real bug on any future from-scratch Android
+# project regeneration. IMPORTANT: this is why the
 # top-level pattern below is `android/*`, not a bare `android/` -- a bare
 # directory pattern makes git skip descending into it entirely, for
 # performance, so NO negation deeper inside it can ever take effect no
@@ -34,6 +38,7 @@ dist-ssr
 android/*
 !android/app/
 android/app/*
+!android/app/build.gradle
 !android/app/src/
 android/app/src/*
 !android/app/src/main/

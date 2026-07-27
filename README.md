@@ -67,10 +67,19 @@ The `android/` folder is a Capacitor project pointed at `webDir: "www"` (see `ca
 #    this step is why an APK can get rebuilt and still show an old version.
 cp app.js index.html style.css sw.js config.js www/
 
-# 2. Sync into the native project (copies www/ -> android/)
+# 2. Bump android/app/build.gradle's versionCode (and versionName to match
+#    APP_VERSION) -- see the comment right there. Skipping THIS step is why
+#    "just install the new APK over the old one" doesn't work: Android's
+#    installer requires a strictly increasing versionCode to treat a new
+#    APK as an update to the existing app. Every build up through v1.2.0
+#    this session shared the same hardcoded versionCode 1, which is the
+#    real reason every install needed an uninstall first -- not a real
+#    technical requirement, just a config value nobody was bumping.
+
+# 3. Sync into the native project (copies www/ -> android/)
 npx cap sync android
 
-# 3. Build (JDK 21 + the Android SDK, same toolchain as Winfinity's APKs)
+# 4. Build (JDK 21 + the Android SDK, same toolchain as Winfinity's APKs)
 cd android
 JAVA_HOME="/path/to/jdk21" ANDROID_HOME="/path/to/android_sdk" ./gradlew.bat assembleDebug
 ```
@@ -79,9 +88,10 @@ Output: `android/app/build/outputs/apk/debug/app-debug.apk`. Verify before distr
 
 ```
 unzip -p android/app/build/outputs/apk/debug/app-debug.apk assets/public/app.js | grep APP_VERSION
+"$ANDROID_HOME/build-tools/<version>/aapt.exe" dump badging android/app/build/outputs/apk/debug/app-debug.apk | grep versionCode
 ```
 
-`android/app/src/main/AndroidManifest.xml` and `MainActivity.java` hold real hand-written native code (the `CAMERA` runtime-permission request the in-app Camera Capture button needs — Android silently refuses `getUserMedia()` in the WebView without it) and are the only files under `android/` actually tracked in git; everything else there is regenerable build output.
+`android/app/src/main/AndroidManifest.xml`, `MainActivity.java`, and `android/app/build.gradle` hold real hand-written native code/config (the `CAMERA` runtime-permission request the in-app Camera Capture button needs; the Android back-button JS bridge; and the versionCode above) and are the only files under `android/` actually tracked in git; everything else there is regenerable build output.
 
 ## Notes
 
