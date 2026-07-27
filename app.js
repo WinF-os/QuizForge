@@ -35,7 +35,10 @@ const state = {
 const QUESTION_TYPES = [
   { key: 'multipleChoice', title: 'Multiple Choice', sub: 'Standard 4-option selection.', icon: '☑' },
   { key: 'trueFalse', title: 'True / False', sub: 'Binary response format.', icon: '⇄' },
+  { key: 'checkCross', title: 'Check / Cross', sub: 'True/False shown as ✓ or ✗.', icon: '✓' },
   { key: 'identification', title: 'Identification', sub: 'One or two word factual answers.', icon: '🔎' },
+  { key: 'identificationChoices', title: 'Identification (with Choices)', sub: 'Fill in the blank from a word bank.', icon: '🗂' },
+  { key: 'matching', title: 'Matching Type', sub: 'Match each item on the left to one on the right.', icon: '🔗' },
   { key: 'calculation', title: 'Calculation', sub: 'Numeric, worked-out answers.', icon: '∑' },
   { key: 'essay', title: 'Essay', sub: 'Short written responses, AI-graded.', icon: '✎' },
 ];
@@ -49,7 +52,10 @@ const DIFFICULTIES = [
 const TYPE_LABELS = {
   multipleChoice: 'Multiple Choice',
   trueFalse: 'True / False',
+  checkCross: 'Check / Cross',
   identification: 'Identification',
+  identificationChoices: 'Identification (with Choices)',
+  matching: 'Matching Type',
   calculation: 'Calculation',
   essay: 'Essay',
 };
@@ -839,13 +845,14 @@ function renderManualTypeFields() {
           </div>
         `).join('')}
       </div>`;
-  } else if (type === 'trueFalse') {
+  } else if (type === 'trueFalse' || type === 'checkCross') {
+    const labels = type === 'checkCross' ? ['✓ Check', '✗ Cross'] : ['True', 'False'];
     box.innerHTML = `
       <label class="field-block">
         <span class="field-label">Correct Answer</span>
         <select class="select-input" id="manualTfCorrect">
-          <option value="True">True</option>
-          <option value="False">False</option>
+          <option value="True">${labels[0]}</option>
+          <option value="False">${labels[1]}</option>
         </select>
       </label>`;
   } else if (type === 'identification') {
@@ -858,6 +865,27 @@ function renderManualTypeFields() {
         <span class="field-label">Other Acceptable Answers (comma-separated, optional)</span>
         <input type="text" class="text-input" id="manualIdAlt" placeholder="e.g. mitochondrion">
       </label>`;
+  } else if (type === 'identificationChoices') {
+    box.innerHTML = `
+      <label class="field-block">
+        <span class="field-label">Correct Answer</span>
+        <input type="text" class="text-input" id="manualIcCorrect" placeholder="e.g. Mitochondria">
+      </label>
+      <div class="field-block">
+        <span class="field-label">Word Bank — other choices shown alongside the correct one</span>
+        ${[0, 1, 2].map((i) => `<input type="text" class="text-input" id="manualIcChoice${i}" placeholder="Distractor ${i + 1}" style="margin-bottom:8px;">`).join('')}
+      </div>`;
+  } else if (type === 'matching') {
+    box.innerHTML = `
+      <div class="field-block">
+        <span class="field-label">Matching Pairs (leave a row blank to skip it)</span>
+        ${[0, 1, 2, 3].map((i) => `
+          <div class="manual-choice-row">
+            <input type="text" class="text-input" id="manualMatchLeft${i}" placeholder="Item ${i + 1}">
+            <input type="text" class="text-input" id="manualMatchRight${i}" placeholder="Match ${i + 1}">
+          </div>
+        `).join('')}
+      </div>`;
   } else {
     box.innerHTML = `
       <label class="field-block">
@@ -907,7 +935,7 @@ $('btnAddManualQuestion').addEventListener('click', () => {
     const correctIndex = Number(document.querySelector('input[name="manualMcCorrect"]:checked').value);
     question.choices = choices;
     question.correctAnswer = choices[correctIndex];
-  } else if (type === 'trueFalse') {
+  } else if (type === 'trueFalse' || type === 'checkCross') {
     question.choices = ['True', 'False'];
     question.correctAnswer = $('manualTfCorrect').value;
   } else if (type === 'identification') {
@@ -916,6 +944,19 @@ $('btnAddManualQuestion').addEventListener('click', () => {
     const alt = $('manualIdAlt').value.split(',').map((s) => s.trim()).filter(Boolean);
     question.correctAnswer = correct;
     question.acceptableAnswers = [correct, ...alt];
+  } else if (type === 'identificationChoices') {
+    const correct = $('manualIcCorrect').value.trim();
+    if (!correct) return;
+    const distractors = [0, 1, 2].map((i) => $(`manualIcChoice${i}`).value.trim()).filter(Boolean);
+    question.correctAnswer = correct;
+    question.acceptableAnswers = [correct];
+    question.choices = shuffleArray([correct, ...distractors]);
+  } else if (type === 'matching') {
+    const pairs = [0, 1, 2, 3]
+      .map((i) => ({ left: $(`manualMatchLeft${i}`).value.trim(), right: $(`manualMatchRight${i}`).value.trim() }))
+      .filter((p) => p.left && p.right);
+    if (pairs.length < 2) return; // a matching exercise needs at least 2 pairs to mean anything
+    question.pairs = pairs;
   } else if (type === 'calculation') {
     const correct = $('manualCalcCorrect').value.trim();
     if (!correct || Number.isNaN(parseFloat(correct))) return;
@@ -927,6 +968,8 @@ $('btnAddManualQuestion').addEventListener('click', () => {
   $('manualExplanationInput').value = '';
   if (type === 'multipleChoice') [0, 1, 2, 3].forEach((i) => { $(`manualChoice${i}`).value = ''; });
   if (type === 'identification') { $('manualIdCorrect').value = ''; $('manualIdAlt').value = ''; }
+  if (type === 'identificationChoices') { $('manualIcCorrect').value = ''; [0, 1, 2].forEach((i) => { $(`manualIcChoice${i}`).value = ''; }); }
+  if (type === 'matching') [0, 1, 2, 3].forEach((i) => { $(`manualMatchLeft${i}`).value = ''; $(`manualMatchRight${i}`).value = ''; });
   if (type === 'calculation') { $('manualCalcCorrect').value = ''; }
   renderManualQuestionList();
 });
@@ -950,10 +993,16 @@ function updateLiveQuizScore() {
   const questions = state.quiz.questions;
   const correct = questions.filter((q) => {
     const a = state.answers[q.id];
-    return isObjectiveType(q.type) && a !== undefined && String(a).trim() !== '' && gradeObjectiveQuestion(q, a);
+    return isObjectiveType(q.type) && isAnswered(q, a) && gradeObjectiveQuestion(q, a);
   }).length;
   $('quizLiveScore').textContent = `${correct}/${questions.length}`;
 }
+
+// checkCross is a trueFalse question underneath (correctAnswer/grading is
+// identical, see gradeObjectiveQuestion) -- only the button labels differ.
+const CHOICE_TYPE_DISPLAY = {
+  checkCross: [{ value: 'True', label: '✓ Check' }, { value: 'False', label: '✗ Cross' }],
+};
 
 function renderQuizQuestion() {
   const question = state.quiz.questions[state.quizIndex];
@@ -969,7 +1018,7 @@ function renderQuizQuestion() {
 
   const answer = state.answers[question.id];
   const area = $('questionAnswerArea');
-  const hasAnswer = answer !== undefined && String(answer).trim() !== '';
+  const hasAnswer = isAnswered(question, answer);
   // "Show correct answer on wrong answers" -- locks the question the moment
   // it's answered wrong (not just displays a note off to the side): the
   // wrong choice can no longer be changed, only the correct one is made
@@ -977,16 +1026,17 @@ function renderQuizQuestion() {
   const isWrong = hasAnswer && isObjectiveType(question.type) && !gradeObjectiveQuestion(question, answer);
   const locked = state.showCorrectAnswers && isWrong;
 
-  if (question.type === 'multipleChoice' || question.type === 'trueFalse') {
-    const choices = question.choices?.length ? question.choices : ['True', 'False'];
-    area.innerHTML = `<div class="choice-list">${choices.map((choice) => {
-      const isSelected = answer === choice;
-      const isCorrectChoice = locked && choice === question.correctAnswer;
-      const isWrongChoice = locked && isSelected && choice !== question.correctAnswer;
+  if (question.type === 'multipleChoice' || question.type === 'trueFalse' || question.type === 'checkCross' || question.type === 'identificationChoices') {
+    const options = CHOICE_TYPE_DISPLAY[question.type]
+      || (question.choices?.length ? question.choices : ['True', 'False']).map((c) => ({ value: c, label: c }));
+    area.innerHTML = `<div class="choice-list">${options.map(({ value, label }) => {
+      const isSelected = answer === value;
+      const isCorrectChoice = locked && value === question.correctAnswer;
+      const isWrongChoice = locked && isSelected && value !== question.correctAnswer;
       const cls = ['choice-option', isSelected ? 'is-selected' : '', isCorrectChoice ? 'is-correct' : '', isWrongChoice ? 'is-incorrect' : '', locked ? 'is-locked' : ''].filter(Boolean).join(' ');
       const radioCls = ['choice-radio', isSelected ? 'is-selected' : '', isCorrectChoice ? 'is-correct' : '', isWrongChoice ? 'is-incorrect' : ''].filter(Boolean).join(' ');
-      return `<button type="button" class="${cls}" data-choice="${esc(choice)}"${locked ? ' disabled' : ''}>
-        <span class="${radioCls}"></span><span>${esc(choice)}</span>
+      return `<button type="button" class="${cls}" data-choice="${esc(value)}"${locked ? ' disabled' : ''}>
+        <span class="${radioCls}"></span><span>${esc(label)}</span>
       </button>`;
     }).join('')}</div>`;
     if (!locked) {
@@ -1008,6 +1058,36 @@ function renderQuizQuestion() {
       // clicking away) is the natural "on the spot" moment for these.
       $('answerInput').addEventListener('blur', () => renderQuizQuestion());
     }
+  } else if (question.type === 'matching') {
+    const pairs = question.pairs || [];
+    // Shuffled once per question (cached on the question object itself) so
+    // the right-hand options don't visibly reorder themselves after every
+    // dropdown change -- shuffled at all so the correct match isn't just
+    // "whichever option is in the same row."
+    if (!question._matchingOptions) question._matchingOptions = shuffleArray(pairs.map((p) => p.right));
+    const rightOptions = question._matchingOptions;
+    area.innerHTML = `<div class="matching-list">${pairs.map((pair, i) => {
+      const selected = answer && answer[i];
+      const pairCorrect = locked && selected === pair.right;
+      const pairWrong = locked && selected && selected !== pair.right;
+      const rowCls = ['matching-row', pairCorrect ? 'is-correct' : '', pairWrong ? 'is-incorrect' : ''].filter(Boolean).join(' ');
+      return `<div class="${rowCls}">
+        <span class="matching-left">${esc(pair.left)}</span>
+        <select class="select-input matching-select" data-index="${i}"${locked ? ' disabled' : ''}>
+          <option value="">Select match…</option>
+          ${rightOptions.map((opt) => `<option value="${esc(opt)}"${selected === opt ? ' selected' : ''}>${esc(opt)}</option>`).join('')}
+        </select>
+      </div>`;
+    }).join('')}</div>`;
+    if (!locked) {
+      area.querySelectorAll('.matching-select').forEach((sel) => {
+        sel.addEventListener('change', (e) => {
+          const current = state.answers[question.id] || {};
+          state.answers[question.id] = { ...current, [Number(e.target.dataset.index)]: e.target.value };
+          renderQuizQuestion();
+        });
+      });
+    }
   } else {
     area.innerHTML = `<textarea class="text-input" id="answerInput" rows="6" placeholder="Write your answer…">${esc(answer || '')}</textarea>`;
     $('answerInput').addEventListener('input', (e) => { state.answers[question.id] = e.target.value; });
@@ -1023,8 +1103,10 @@ function renderQuizQuestion() {
   if (locked) {
     const note = document.createElement('div');
     note.className = 'result-answer correct-answer-note';
-    note.innerHTML = `<strong>Correct answer:</strong> ${esc(question.correctAnswer)}` +
-      (question.explanation ? `<p class="result-explanation" style="margin-top:6px;">${esc(question.explanation)}</p>` : '');
+    const answerText = question.type === 'matching'
+      ? `<strong>Correct matches:</strong><br>${(question.pairs || []).map((p) => `${esc(p.left)} &rarr; ${esc(p.right)}`).join('<br>')}`
+      : `<strong>Correct answer:</strong> ${esc(question.correctAnswer)}`;
+    note.innerHTML = answerText + (question.explanation ? `<p class="result-explanation" style="margin-top:6px;">${esc(question.explanation)}</p>` : '');
     area.parentNode.appendChild(note);
   }
 }
@@ -1064,15 +1146,36 @@ function normalize(str) {
 }
 
 function isObjectiveType(type) {
-  return type === 'multipleChoice' || type === 'trueFalse' || type === 'identification' || type === 'calculation';
+  return (
+    type === 'multipleChoice' ||
+    type === 'trueFalse' ||
+    type === 'checkCross' ||
+    type === 'identification' ||
+    type === 'identificationChoices' ||
+    type === 'matching' ||
+    type === 'calculation'
+  );
+}
+
+// Matching-type answers aren't a single value like every other type -- they're
+// an object keyed by pair index (`{0: 'chosen right-side value', 1: ...}`),
+// since the question itself holds multiple left/right pairs. "Answered"
+// means every pair has a selection; a matching question only locks/grades
+// once fully attempted, not after the first pair.
+function isAnswered(question, answer) {
+  if (question.type === 'matching') {
+    const pairs = question.pairs || [];
+    return pairs.length > 0 && pairs.every((_, i) => answer && answer[i] !== undefined && answer[i] !== '');
+  }
+  return answer !== undefined && answer !== null && String(answer).trim() !== '';
 }
 
 function gradeObjectiveQuestion(question, answer) {
-  if (answer === undefined || answer === null || String(answer).trim() === '') return false;
-  if (question.type === 'multipleChoice' || question.type === 'trueFalse') {
+  if (!isAnswered(question, answer)) return false;
+  if (question.type === 'multipleChoice' || question.type === 'trueFalse' || question.type === 'checkCross') {
     return normalize(answer) === normalize(question.correctAnswer);
   }
-  if (question.type === 'identification') {
+  if (question.type === 'identification' || question.type === 'identificationChoices') {
     const accepted = (question.acceptableAnswers?.length ? question.acceptableAnswers : [question.correctAnswer]).map(normalize);
     return accepted.includes(normalize(answer));
   }
@@ -1083,7 +1186,31 @@ function gradeObjectiveQuestion(question, answer) {
     const tolerance = Math.max(0.01, Math.abs(expected) * 0.01);
     return Math.abs(given - expected) <= tolerance;
   }
+  if (question.type === 'matching') {
+    // All-or-nothing: every pair has to be matched correctly for this
+    // question to count as correct, same single correct/incorrect model
+    // every other question type uses -- no partial credit per pair.
+    return (question.pairs || []).every((pair, i) => answer[i] === pair.right);
+  }
   return false;
+}
+
+// Shared by the quiz runner's lock note and the results screen -- matching
+// answers are a {pairIndex: rightValue} object, not a plain string like
+// every other type, so both display spots need this instead of just
+// stringifying question.correctAnswer / the raw answer value.
+function formatCorrectAnswerText(question) {
+  if (question.type === 'matching') {
+    return (question.pairs || []).map((p) => `${p.left} → ${p.right}`).join('; ');
+  }
+  return question.correctAnswer;
+}
+function formatUserAnswerText(question, answer) {
+  if (question.type === 'matching') {
+    if (!isAnswered(question, answer)) return '';
+    return (question.pairs || []).map((p, i) => `${p.left} → ${answer[i] || '?'}`).join('; ');
+  }
+  return answer;
 }
 
 /* ============ Results ============ */
@@ -1127,12 +1254,13 @@ async function renderResults(justFinished) {
       const correct = objective ? gradeObjectiveQuestion(question, userAnswer) : null;
       const essayGrade = !objective ? state.essayGrades[question.id] : null;
 
+      const userAnswerText = formatUserAnswerText(question, userAnswer);
       return `
         <div class="card result-item${objective ? (correct ? ' is-correct' : ' is-incorrect') : ''}">
           <p class="result-item-index">Question ${index + 1}</p>
           <p class="question-prompt">${esc(question.prompt)}</p>
-          <p class="result-answer"><strong>Your answer:</strong> ${userAnswer ? esc(String(userAnswer)) : '<em>No answer</em>'}</p>
-          ${objective && !correct ? `<p class="result-answer"><strong>Correct answer:</strong> ${esc(question.correctAnswer)}</p>` : ''}
+          <p class="result-answer"><strong>Your answer:</strong> ${userAnswerText ? esc(String(userAnswerText)) : '<em>No answer</em>'}</p>
+          ${objective && !correct ? `<p class="result-answer"><strong>Correct answer:</strong> ${esc(String(formatCorrectAnswerText(question)))}</p>` : ''}
           ${question.explanation ? `<p class="result-explanation">${esc(question.explanation)}</p>` : ''}
           ${!objective ? (essayGrade
             ? `<div class="essay-grade">${typeof essayGrade.score === 'number' ? `<span class="essay-score">${essayGrade.score}/100</span>` : ''}<p class="result-explanation">${esc(essayGrade.feedback)}</p></div>`

@@ -5,7 +5,10 @@ const GEMINI_MODEL = 'gemini-3.1-flash-lite'
 const TYPE_GUIDE: Record<string, string> = {
   multipleChoice: 'multipleChoice: provide exactly 4 plausible "choices" and set "correctAnswer" to the text of the correct choice (must match one entry in "choices" exactly).',
   trueFalse: 'trueFalse: set "choices" to ["True","False"] and "correctAnswer" to either "True" or "False".',
+  checkCross: 'checkCross: functionally identical to trueFalse (the app just displays it as check/cross icons instead of the words) -- set "correctAnswer" to either "True" or "False".',
   identification: 'identification: a short factual answer (a word, term, name, or number). Set "correctAnswer" to the primary accepted answer and "acceptableAnswers" to an array of accepted spelling/phrasing variants (include the primary answer in that array too).',
+  identificationChoices: 'identificationChoices: a short factual answer shown alongside a word bank. Provide exactly 4 "choices" (the correct answer plus 3 plausible distractors) and set "correctAnswer" to the text of the correct choice (must match one entry in "choices" exactly).',
+  matching: 'matching: a set of related left/right item pairs to match (e.g. terms with definitions, causes with effects). Provide 4-6 "pairs", each an object with a "left" and "right" string field. Do not set "correctAnswer" or "choices" for this type.',
   calculation: 'calculation: a numeric word problem solvable from the source material or general subject knowledge. Set "correctAnswer" to the final numeric answer as a plain string (no units unless essential), and "expectedAnswer" to a brief worked solution.',
   essay: 'essay: an open-ended short-answer/essay prompt. Set "expectedAnswer" to a model answer and "rubric" to 2-4 short bullet criteria used to grade a student\'s response. Do not set "correctAnswer" or "choices" for this type.',
 }
@@ -78,11 +81,19 @@ Deno.serve(async (req) => {
               items: {
                 type: 'OBJECT',
                 properties: {
-                  type: { type: 'STRING', enum: ['multipleChoice', 'trueFalse', 'identification', 'calculation', 'essay'] },
+                  type: { type: 'STRING', enum: ['multipleChoice', 'trueFalse', 'checkCross', 'identification', 'identificationChoices', 'matching', 'calculation', 'essay'] },
                   prompt: { type: 'STRING' },
                   choices: { type: 'ARRAY', items: { type: 'STRING' } },
                   correctAnswer: { type: 'STRING' },
                   acceptableAnswers: { type: 'ARRAY', items: { type: 'STRING' } },
+                  pairs: {
+                    type: 'ARRAY',
+                    items: {
+                      type: 'OBJECT',
+                      properties: { left: { type: 'STRING' }, right: { type: 'STRING' } },
+                      required: ['left', 'right'],
+                    },
+                  },
                   expectedAnswer: { type: 'STRING' },
                   rubric: { type: 'STRING' },
                   explanation: { type: 'STRING' },

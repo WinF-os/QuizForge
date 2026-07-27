@@ -406,6 +406,12 @@ textarea.text-input { resize: vertical; font-family: inherit; }
 .choice-radio.is-correct { border-color: var(--color-success); background: var(--color-success); }
 .choice-radio.is-incorrect { border-color: var(--color-danger); background: var(--color-danger); }
 .answer-input-locked { opacity: 0.75; }
+.matching-list { display: flex; flex-direction: column; gap: var(--space-3); }
+.matching-row { display: flex; align-items: center; gap: var(--space-3); border: 1.5px solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-3); }
+.matching-row.is-correct { border-color: var(--color-success); background: color-mix(in srgb, var(--color-success) 14%, var(--color-surface)); }
+.matching-row.is-incorrect { border-color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 14%, var(--color-surface)); }
+.matching-left { flex: 1; font-size: 0.9rem; font-weight: 600; }
+.matching-select { flex: 1; }
 .quiz-runner-nav { display: flex; gap: var(--space-3); }
 .quiz-runner-nav .btn { flex: 1; }
 
