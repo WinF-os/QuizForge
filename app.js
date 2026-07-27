@@ -942,6 +942,19 @@ $('btnStartManualExam').addEventListener('click', () => {
 
 /* ============ Quiz runner ============ */
 
+// Live "N/total correct" shown top-right during the quiz -- only objective
+// (instantly-gradable) questions the user has actually answered contribute
+// to the numerator; essay questions can't be scored without an AI call, so
+// they're excluded rather than silently counted as wrong.
+function updateLiveQuizScore() {
+  const questions = state.quiz.questions;
+  const correct = questions.filter((q) => {
+    const a = state.answers[q.id];
+    return isObjectiveType(q.type) && a !== undefined && String(a).trim() !== '' && gradeObjectiveQuestion(q, a);
+  }).length;
+  $('quizLiveScore').textContent = `${correct}/${questions.length}`;
+}
+
 function renderQuizQuestion() {
   const question = state.quiz.questions[state.quizIndex];
   const total = state.quiz.questions.length;
@@ -952,28 +965,49 @@ function renderQuizQuestion() {
   $('quizProgressLabel').textContent = `Question ${state.quizIndex + 1} of ${total}`;
   $('questionTypeTag').textContent = TYPE_LABELS[question.type] || question.type;
   $('questionPrompt').textContent = question.prompt;
+  updateLiveQuizScore();
 
   const answer = state.answers[question.id];
   const area = $('questionAnswerArea');
+  const hasAnswer = answer !== undefined && String(answer).trim() !== '';
+  // "Show correct answer on wrong answers" -- locks the question the moment
+  // it's answered wrong (not just displays a note off to the side): the
+  // wrong choice can no longer be changed, only the correct one is made
+  // clear, right on the question itself.
+  const isWrong = hasAnswer && isObjectiveType(question.type) && !gradeObjectiveQuestion(question, answer);
+  const locked = state.showCorrectAnswers && isWrong;
 
   if (question.type === 'multipleChoice' || question.type === 'trueFalse') {
     const choices = question.choices?.length ? question.choices : ['True', 'False'];
-    area.innerHTML = `<div class="choice-list">${choices.map((choice) => `
-      <button type="button" class="choice-option${answer === choice ? ' is-selected' : ''}" data-choice="${esc(choice)}">
-        <span class="choice-radio${answer === choice ? ' is-selected' : ''}"></span><span>${esc(choice)}</span>
-      </button>`).join('')}</div>`;
-    area.querySelectorAll('.choice-option').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        state.answers[question.id] = btn.dataset.choice;
-        renderQuizQuestion();
+    area.innerHTML = `<div class="choice-list">${choices.map((choice) => {
+      const isSelected = answer === choice;
+      const isCorrectChoice = locked && choice === question.correctAnswer;
+      const isWrongChoice = locked && isSelected && choice !== question.correctAnswer;
+      const cls = ['choice-option', isSelected ? 'is-selected' : '', isCorrectChoice ? 'is-correct' : '', isWrongChoice ? 'is-incorrect' : '', locked ? 'is-locked' : ''].filter(Boolean).join(' ');
+      const radioCls = ['choice-radio', isSelected ? 'is-selected' : '', isCorrectChoice ? 'is-correct' : '', isWrongChoice ? 'is-incorrect' : ''].filter(Boolean).join(' ');
+      return `<button type="button" class="${cls}" data-choice="${esc(choice)}"${locked ? ' disabled' : ''}>
+        <span class="${radioCls}"></span><span>${esc(choice)}</span>
+      </button>`;
+    }).join('')}</div>`;
+    if (!locked) {
+      area.querySelectorAll('.choice-option').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          state.answers[question.id] = btn.dataset.choice;
+          renderQuizQuestion();
+        });
       });
-    });
-  } else if (question.type === 'identification') {
-    area.innerHTML = `<input type="text" class="text-input" id="answerInput" placeholder="Type your answer" value="${esc(answer || '')}">`;
-    $('answerInput').addEventListener('input', (e) => { state.answers[question.id] = e.target.value; });
-  } else if (question.type === 'calculation') {
-    area.innerHTML = `<input type="text" inputmode="decimal" class="text-input" id="answerInput" placeholder="Enter a numeric answer" value="${esc(answer || '')}">`;
-    $('answerInput').addEventListener('input', (e) => { state.answers[question.id] = e.target.value; });
+    }
+  } else if (question.type === 'identification' || question.type === 'calculation') {
+    const inputMode = question.type === 'calculation' ? ' inputmode="decimal"' : '';
+    const placeholder = question.type === 'calculation' ? 'Enter a numeric answer' : 'Type your answer';
+    area.innerHTML = `<input type="text"${inputMode} class="text-input${locked ? ' answer-input-locked' : ''}" id="answerInput" placeholder="${placeholder}" value="${esc(answer || '')}"${locked ? ' readonly' : ''}>`;
+    if (!locked) {
+      $('answerInput').addEventListener('input', (e) => { state.answers[question.id] = e.target.value; updateLiveQuizScore(); });
+      // Instant-choice types (above) lock the moment you click; a typed
+      // answer can't grade until you're done typing -- blur (tabbing/
+      // clicking away) is the natural "on the spot" moment for these.
+      $('answerInput').addEventListener('blur', () => renderQuizQuestion());
+    }
   } else {
     area.innerHTML = `<textarea class="text-input" id="answerInput" rows="6" placeholder="Write your answer…">${esc(answer || '')}</textarea>`;
     $('answerInput').addEventListener('input', (e) => { state.answers[question.id] = e.target.value; });
@@ -982,19 +1016,15 @@ function renderQuizQuestion() {
   $('btnQuizPrev').disabled = state.quizIndex === 0;
   $('btnQuizNext').textContent = state.quizIndex < total - 1 ? 'Next' : 'Finish exam';
 
-  // "Show correct answer on wrong answers" -- the checkbox already existed
-  // in index.html and the state flag was already initialized, but nothing
-  // ever actually read either of them here. Keep the checkbox in sync with
-  // state across question navigation, then show the correct answer inline
-  // only for an objective question the user has actually answered wrong.
   const toggle = $('showCorrectAnswersToggle');
   toggle.checked = !!state.showCorrectAnswers;
   const existingNote = area.parentNode.querySelector('.correct-answer-note');
   if (existingNote) existingNote.remove();
-  if (state.showCorrectAnswers && answer !== undefined && isObjectiveType(question.type) && !gradeObjectiveQuestion(question, answer)) {
-    const note = document.createElement('p');
+  if (locked) {
+    const note = document.createElement('div');
     note.className = 'result-answer correct-answer-note';
-    note.innerHTML = `<strong>Correct answer:</strong> ${esc(question.correctAnswer)}`;
+    note.innerHTML = `<strong>Correct answer:</strong> ${esc(question.correctAnswer)}` +
+      (question.explanation ? `<p class="result-explanation" style="margin-top:6px;">${esc(question.explanation)}</p>` : '');
     area.parentNode.appendChild(note);
   }
 }
