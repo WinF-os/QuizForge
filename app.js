@@ -399,14 +399,41 @@ function showCreateStep(step) {
   if (step !== 'quiz') stopQuizTimer(); // covers every way of leaving the quiz screen (finish, back, tab switch) in one place
 }
 
-$('btnHeaderBack').addEventListener('click', () => {
-  if (state.tab !== 'create') return;
+// Shared by the on-screen back button and the hardware/gesture Android
+// back button (see handleAndroidBack below) -- one step back through the
+// Create flow's own linear order. Returns whether it actually moved.
+function goBackOneCreateStep() {
+  if (state.tab !== 'create') return false;
   const order = state.generationMode === 'manual'
     ? ['source', 'manualBuilder', 'quiz', 'results']
     : ['source', 'configure', 'generating', 'quiz', 'results'];
   const idx = order.indexOf(state.createStep);
-  if (idx > 0) showCreateStep(order[idx - 1]);
-});
+  if (idx > 0) { showCreateStep(order[idx - 1]); return true; }
+  return false;
+}
+
+$('btnHeaderBack').addEventListener('click', goBackOneCreateStep);
+
+// Handles the Android hardware/gesture back button -- called from native
+// code (see MainActivity.java's onBackPressed), which hands back-navigation
+// entirely to JS instead of Capacitor's default (WebView history back, else
+// exit the app). This app is a single-page app with no real browser
+// history, so that default would exit on almost every back press,
+// including from the camera. Order of what "back" means here: close the
+// camera if it's open, then step back through the Create flow, then
+// return to the Home tab, then -- once there's nowhere left to go --
+// minimize the app instead of exiting, so reopening it resumes exactly
+// where it was (the OS already does this for free as long as the Activity
+// is only ever backgrounded, never finished).
+window.handleAndroidBack = function () {
+  if (!$('cameraOverlay').hidden) { closeCamera(); return; }
+  const versionPopup = document.getElementById('versionPopup');
+  if (versionPopup && versionPopup.classList.contains('is-visible')) { versionPopup.classList.remove('is-visible'); return; }
+  if (!$('legibilityModal').hidden) return; // mid-decision -- don't let back silently dismiss it
+  if (goBackOneCreateStep()) return;
+  if (state.tab !== 'home') { switchTab('home'); return; }
+  if (window.AndroidBridge && window.AndroidBridge.minimizeApp) window.AndroidBridge.minimizeApp();
+};
 
 /* ============ Create: generation mode ============ */
 
