@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.2.3';
+const APP_VERSION = 'QF_SYS_V.1.2.4';
 
 // Diagnostic only: captures the first uncaught error/rejection anywhere in
 // the app so it can be surfaced in the UI (Profile > Backup & Restore) --
@@ -2420,17 +2420,46 @@ async function restoreFromDrive() {
 $('btnRestoreDrive').addEventListener('click', restoreFromDrive);
 
 refreshDriveUi();
-// google.accounts may not have finished loading (the GIS script is async)
-// by the time this file runs -- try immediately, then keep retrying once a
-// second for up to 20s in case the script is just slow (mobile data, a
-// fresh WebView on native), rather than giving up after one fixed delay
-// and leaving "still loading" stuck forever even once the script does load.
-initDrive();
-if (!driveTokenClient) {
-  let driveInitAttempts = 0;
-  const driveInitRetry = setInterval(() => {
-    driveInitAttempts++;
-    initDrive();
-    if (driveTokenClient || driveInitAttempts >= 20) clearInterval(driveInitRetry);
-  }, 1000);
+// The GIS script tag was previously static in index.html -- but a static
+// <script src> only fetches ONCE at page load. In the native app that
+// single fetch was found to fail outright (confirmed via an on-device diag:
+// "window.google is undefined" even after 20s of polling) -- no amount of
+// polling for google.accounts.oauth2 to appear can ever help if the one
+// network request behind it already failed, since nothing was re-asking
+// the browser to actually fetch it again. This loads it dynamically instead
+// so a failed attempt can be retried for real, with its own onload/onerror.
+const GSI_SCRIPT_URL = 'https://accounts.google.com/gsi/client';
+const GSI_MAX_ATTEMPTS = 5;
+function loadGsiScript(attempt) {
+  attempt = attempt || 0;
+  if (typeof google !== 'undefined' && google.accounts?.oauth2) { initDrive(); return; }
+  if (attempt >= GSI_MAX_ATTEMPTS) {
+    driveInitError = `accounts.google.com/gsi/client failed to load after ${GSI_MAX_ATTEMPTS} attempts`;
+    return;
+  }
+  const script = document.createElement('script');
+  script.src = attempt === 0 ? GSI_SCRIPT_URL : `${GSI_SCRIPT_URL}?retry=${attempt}-${Date.now()}`;
+  script.async = true;
+  script.onload = () => {
+    // onload fires once the script executes, but google.accounts.oauth2 can
+    // take a beat longer to actually be assigned -- give it a short poll
+    // window before treating this attempt itself as failed and retrying.
+    let pollTries = 0;
+    const poll = setInterval(() => {
+      pollTries++;
+      if (typeof google !== 'undefined' && google.accounts?.oauth2) {
+        clearInterval(poll);
+        initDrive();
+      } else if (pollTries >= 10) {
+        clearInterval(poll);
+        loadGsiScript(attempt + 1);
+      }
+    }, 300);
+  };
+  script.onerror = () => {
+    driveInitError = `accounts.google.com/gsi/client failed to load (network error), attempt ${attempt + 1}/${GSI_MAX_ATTEMPTS}`;
+    setTimeout(() => loadGsiScript(attempt + 1), 1000 * (attempt + 1));
+  };
+  document.head.appendChild(script);
 }
+if (driveConfigured()) loadGsiScript();
