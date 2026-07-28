@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.2.1';
+const APP_VERSION = 'QF_SYS_V.1.2.2';
 
 /* ============ State ============ */
 
@@ -2391,7 +2391,16 @@ $('btnRestoreDrive').addEventListener('click', restoreFromDrive);
 
 refreshDriveUi();
 // google.accounts may not have finished loading (the GIS script is async)
-// by the time this file runs -- try immediately, then again shortly after
-// in case it wasn't ready yet, rather than requiring a page reload.
+// by the time this file runs -- try immediately, then keep retrying once a
+// second for up to 20s in case the script is just slow (mobile data, a
+// fresh WebView on native), rather than giving up after one fixed delay
+// and leaving "still loading" stuck forever even once the script does load.
 initDrive();
-setTimeout(initDrive, 1500);
+if (!driveTokenClient) {
+  let driveInitAttempts = 0;
+  const driveInitRetry = setInterval(() => {
+    driveInitAttempts++;
+    initDrive();
+    if (driveTokenClient || driveInitAttempts >= 20) clearInterval(driveInitRetry);
+  }, 1000);
+}
