@@ -1,6 +1,21 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.2.2';
+const APP_VERSION = 'QF_SYS_V.1.2.3';
+
+// Diagnostic only: captures the first uncaught error/rejection anywhere in
+// the app so it can be surfaced in the UI (Profile > Backup & Restore) --
+// there's no remote devtools access to a user's native install, and an
+// uncaught throw partway through this script's top-level init sequence has
+// silently killed later, unrelated code before (see README/history for the
+// version-popup regression incident). Lets a real error be screenshotted
+// instead of guessed at blind.
+window.__firstUncaughtError = null;
+window.addEventListener('error', (e) => {
+  if (!window.__firstUncaughtError) window.__firstUncaughtError = `${e.message} (${e.filename}:${e.lineno})`;
+});
+window.addEventListener('unhandledrejection', (e) => {
+  if (!window.__firstUncaughtError) window.__firstUncaughtError = `Unhandled promise rejection: ${e.reason}`;
+});
 
 /* ============ State ============ */
 
@@ -2320,22 +2335,37 @@ function refreshDriveUi() {
   $('driveStatus').textContent = connected ? 'Connected.' : 'Not connected.';
 }
 
+let driveInitError = null;
+
 function initDrive() {
   if (!driveConfigured() || typeof google === 'undefined' || !google.accounts?.oauth2) return;
-  driveTokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: GOOGLE_CLIENT_ID,
-    scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
-    callback: (resp) => {
-      if (resp.error) { $('backupStatusText').textContent = `Google sign-in failed: ${resp.error}`; return; }
-      driveAccessToken = resp.access_token;
-      refreshDriveUi();
-      $('backupStatusText').textContent = 'Connected to Google Drive.';
-    },
-  });
+  try {
+    driveTokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
+      callback: (resp) => {
+        if (resp.error) { $('backupStatusText').textContent = `Google sign-in failed: ${resp.error}`; return; }
+        driveAccessToken = resp.access_token;
+        refreshDriveUi();
+        $('backupStatusText').textContent = 'Connected to Google Drive.';
+      },
+    });
+  } catch (e) {
+    driveInitError = e.message || String(e);
+  }
 }
 
 $('btnConnectDrive').addEventListener('click', () => {
-  if (!driveTokenClient) { $('backupStatusText').textContent = 'Google sign-in is still loading -- try again in a moment.'; return; }
+  if (!driveTokenClient) {
+    let diag = driveInitError || window.__firstUncaughtError;
+    if (!diag) {
+      diag = typeof google === 'undefined'
+        ? 'the accounts.google.com/gsi/client script never loaded (window.google is undefined)'
+        : (!google.accounts ? 'google.accounts is undefined' : 'google.accounts.oauth2 is undefined');
+    }
+    $('backupStatusText').textContent = `Google sign-in is still loading -- try again in a moment. (diag: ${diag})`;
+    return;
+  }
   driveTokenClient.requestAccessToken({ prompt: 'consent' });
 });
 
