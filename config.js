@@ -10,4 +10,4 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // must be a QuizForge-specific OAuth client -- see README.md's "Google
 // Drive Backup Setup" section for exactly how to create one; a client ID
 // from a different app (like Winfinity's) will not work here.
-const GOOGLE_CLIENT_ID = '';
+const GOOGLE_CLIENT_ID = '877281164872-ap9h374glpcf9qt47hs66r6hi4rctr9g.apps.googleusercontent.com';
