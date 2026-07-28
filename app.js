@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.2.4';
+const APP_VERSION = 'QF_SYS_V.1.2.5';
 
 // Diagnostic only: captures the first uncaught error/rejection anywhere in
 // the app so it can be surfaced in the UI (Profile > Backup & Restore) --
@@ -2369,6 +2369,15 @@ $('btnConnectDrive').addEventListener('click', () => {
   driveTokenClient.requestAccessToken({ prompt: 'consent' });
 });
 
+async function driveErrorDetail(res) {
+  try {
+    const body = await res.json();
+    return body?.error?.message || JSON.stringify(body);
+  } catch (e) {
+    return '(no error body)';
+  }
+}
+
 async function saveToDrive() {
   if (!driveAccessToken) return;
   $('backupStatusText').textContent = 'Backing up to Drive…';
@@ -2389,7 +2398,7 @@ async function saveToDrive() {
       headers: { Authorization: `Bearer ${driveAccessToken}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
       body,
     });
-    if (!res.ok) throw new Error(`Drive returned HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`Drive returned HTTP ${res.status}: ${await driveErrorDetail(res)}`);
     const data = await res.json();
     if (data.id) localStorage.setItem(DRIVE_FILE_ID_KEY, data.id);
     $('backupStatusText').textContent = `Backed up ${payload.library.length} exam(s) to Google Drive.`;
@@ -2408,7 +2417,7 @@ async function restoreFromDrive() {
     const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
       headers: { Authorization: `Bearer ${driveAccessToken}` },
     });
-    if (!res.ok) throw new Error(`Drive returned HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`Drive returned HTTP ${res.status}: ${await driveErrorDetail(res)}`);
     const payload = await res.json();
     if (!confirm(`Restore ${payload.library?.length ?? '?'} exam(s) from your Google Drive backup? This replaces your current library on this device.`)) return;
     applyBackupPayload(payload);
