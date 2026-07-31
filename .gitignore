@@ -71,6 +71,9 @@ android/app/src/main/res/layout/*
 !android/app/src/main/res/drawable/
 android/app/src/main/res/drawable/*
 !android/app/src/main/res/drawable/splash_glow.xml
+!android/app/src/main/res/drawable-nodpi/
+android/app/src/main/res/drawable-nodpi/*
+!android/app/src/main/res/drawable-nodpi/splash_icon.png
 www/
 
 # Local dev tooling config, not part of the app

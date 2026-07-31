@@ -17,10 +17,11 @@
 
     <ImageView
         android:id="@+id/splashIcon"
-        android:layout_width="140dp"
-        android:layout_height="140dp"
+        android:layout_width="190dp"
+        android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:src="@mipmap/ic_launcher_foreground"
+        android:adjustViewBounds="true"
+        android:src="@drawable/splash_icon"
         android:contentDescription="@null" />
 
 </FrameLayout>
