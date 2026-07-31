@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.2.7';
+const APP_VERSION = 'QF_SYS_V.1.2.9';
 
 // Diagnostic only: captures the first uncaught error/rejection anywhere in
 // the app so it can be surfaced in the UI (Profile > Backup & Restore) --
@@ -2355,7 +2355,57 @@ function initDrive() {
   }
 }
 
+// Google Identity Services (the JS library initDrive()/loadGsiScript() below
+// use) refuses to run inside ANY embedded WebView, including this one --
+// confirmed on-device: curl on the same device fetches the GIS script fine,
+// but the WebView's own fetch() to the identical URL fails every time with
+// a generic "Failed to fetch". This isn't a bug fixable with retries; it's
+// Google deliberately blocking WebView contexts as an anti-phishing measure.
+// So the native app uses a completely different path: open the OAuth
+// consent screen in the real system browser (via window.open, the same
+// proven external-navigation mechanism already used for the Gemini API key
+// link and the native update APK download), then hand the result back in
+// through oauth-redirect.html -> the app's custom URL scheme ->
+// MainActivity.onNewIntent() -> window.handleOAuthRedirect() below.
+let driveOAuthState = null;
+
+function connectDriveNative() {
+  driveOAuthState = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: 'https://winf-os.github.io/sQUIZit/oauth-redirect.html',
+    response_type: 'token',
+    scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
+    include_granted_scopes: 'true',
+    prompt: 'consent',
+    state: driveOAuthState,
+  });
+  $('backupStatusText').textContent = 'Opening Google sign-in in your browser…';
+  window.open('https://accounts.google.com/o/oauth2/v2/auth?' + params.toString(), '_blank', 'noopener');
+}
+
+// Called from native (MainActivity.onNewIntent -> evaluateJavascript) once
+// the system browser hands control back via the custom URL scheme.
+window.handleOAuthRedirect = function (fragment) {
+  const params = new URLSearchParams(fragment);
+  if (params.get('error')) {
+    $('backupStatusText').textContent = `Google sign-in failed: ${params.get('error')}`;
+    return;
+  }
+  const token = params.get('access_token');
+  if (!token) return;
+  if (!driveOAuthState || params.get('state') !== driveOAuthState) {
+    $('backupStatusText').textContent = 'Google sign-in response did not match this request -- please try again.';
+    return;
+  }
+  driveOAuthState = null;
+  driveAccessToken = token;
+  refreshDriveUi();
+  $('backupStatusText').textContent = 'Connected to Google Drive.';
+};
+
 $('btnConnectDrive').addEventListener('click', () => {
+  if (isNativeApp()) { connectDriveNative(); return; }
   if (!driveTokenClient) {
     let diag = driveInitError || window.__firstUncaughtError;
     if (!diag) {
@@ -2435,40 +2485,62 @@ refreshDriveUi();
 // "window.google is undefined" even after 20s of polling) -- no amount of
 // polling for google.accounts.oauth2 to appear can ever help if the one
 // network request behind it already failed, since nothing was re-asking
-// the browser to actually fetch it again. This loads it dynamically instead
-// so a failed attempt can be retried for real, with its own onload/onerror.
+// the browser to actually fetch it again. A retrying dynamic <script src>
+// still failed every attempt on a real device, though -- confirmed (via
+// adb/curl from that same device) that the device itself could fetch this
+// exact URL fine, meaning the WebView's own resource-loading network path
+// was what was broken, not connectivity in general. Capacitor's bundled
+// CapacitorHttp plugin transparently reroutes window.fetch()/XHR through
+// native Android networking (the same path curl uses) -- but that patch
+// only covers JS-level fetch/XHR, not raw <script src> tags, which the
+// WebView still loads itself. So: fetch the script as text (through the
+// native-routed fetch) and execute it locally via a blob URL instead of
+// ever asking the WebView to load the remote URL directly as a script.
 const GSI_SCRIPT_URL = 'https://accounts.google.com/gsi/client';
 const GSI_MAX_ATTEMPTS = 5;
 function loadGsiScript(attempt) {
   attempt = attempt || 0;
   if (typeof google !== 'undefined' && google.accounts?.oauth2) { initDrive(); return; }
   if (attempt >= GSI_MAX_ATTEMPTS) {
-    driveInitError = `accounts.google.com/gsi/client failed to load after ${GSI_MAX_ATTEMPTS} attempts`;
+    driveInitError = `accounts.google.com/gsi/client failed after ${GSI_MAX_ATTEMPTS} attempts -- last reason: ${driveInitError || '(none captured)'}`;
     return;
   }
-  const script = document.createElement('script');
-  script.src = attempt === 0 ? GSI_SCRIPT_URL : `${GSI_SCRIPT_URL}?retry=${attempt}-${Date.now()}`;
-  script.async = true;
-  script.onload = () => {
-    // onload fires once the script executes, but google.accounts.oauth2 can
-    // take a beat longer to actually be assigned -- give it a short poll
-    // window before treating this attempt itself as failed and retrying.
-    let pollTries = 0;
-    const poll = setInterval(() => {
-      pollTries++;
-      if (typeof google !== 'undefined' && google.accounts?.oauth2) {
-        clearInterval(poll);
-        initDrive();
-      } else if (pollTries >= 10) {
-        clearInterval(poll);
-        loadGsiScript(attempt + 1);
-      }
-    }, 300);
-  };
-  script.onerror = () => {
-    driveInitError = `accounts.google.com/gsi/client failed to load (network error), attempt ${attempt + 1}/${GSI_MAX_ATTEMPTS}`;
-    setTimeout(() => loadGsiScript(attempt + 1), 1000 * (attempt + 1));
-  };
-  document.head.appendChild(script);
+  const url = attempt === 0 ? GSI_SCRIPT_URL : `${GSI_SCRIPT_URL}?retry=${attempt}-${Date.now()}`;
+  fetch(url)
+    .then((res) => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.text(); })
+    .then((text) => {
+      const blobUrl = URL.createObjectURL(new Blob([text], { type: 'application/javascript' }));
+      const script = document.createElement('script');
+      script.src = blobUrl;
+      script.onload = () => {
+        URL.revokeObjectURL(blobUrl);
+        // onload fires once the script executes, but google.accounts.oauth2
+        // can take a beat longer to actually be assigned -- give it a short
+        // poll window before treating this attempt as failed and retrying.
+        let pollTries = 0;
+        const poll = setInterval(() => {
+          pollTries++;
+          if (typeof google !== 'undefined' && google.accounts?.oauth2) {
+            clearInterval(poll);
+            initDrive();
+          } else if (pollTries >= 10) {
+            clearInterval(poll);
+            loadGsiScript(attempt + 1);
+          }
+        }, 300);
+      };
+      script.onerror = () => {
+        URL.revokeObjectURL(blobUrl);
+        driveInitError = `accounts.google.com/gsi/client fetched but failed to execute, attempt ${attempt + 1}/${GSI_MAX_ATTEMPTS}`;
+        setTimeout(() => loadGsiScript(attempt + 1), 1000 * (attempt + 1));
+      };
+      document.head.appendChild(script);
+    })
+    .catch((e) => {
+      driveInitError = `accounts.google.com/gsi/client fetch failed (${e.message}), attempt ${attempt + 1}/${GSI_MAX_ATTEMPTS}`;
+      setTimeout(() => loadGsiScript(attempt + 1), 1000 * (attempt + 1));
+    });
 }
-if (driveConfigured()) loadGsiScript();
+// GIS is native-app-broken by design (see connectDriveNative() above) --
+// no point burning 5 retries/~15s on a load that can never succeed there.
+if (driveConfigured() && !isNativeApp()) loadGsiScript();

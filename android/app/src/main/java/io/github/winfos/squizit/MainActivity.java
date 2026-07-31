@@ -1,8 +1,11 @@
 package io.github.winfos.squizit;
 
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.JavascriptInterface;
 import com.getcapacitor.BridgeActivity;
+import org.json.JSONObject;
 
 // Was briefly overridden to manually request CAMERA permission in onCreate(),
 // on the wrong assumption that Capacitor's WebView needed that pushed to it
@@ -43,6 +46,26 @@ public class MainActivity extends BridgeActivity {
   @Override
   public void onBackPressed() {
     getBridge().getWebView().evaluateJavascript("window.handleAndroidBack && window.handleAndroidBack();", null);
+  }
+
+  // Google Drive's OAuth step runs in the system browser, not this WebView
+  // (Google Identity Services actively refuses to run inside any embedded
+  // WebView -- confirmed on-device, not a bug in our code). oauth-redirect
+  // .html hands the result back in through this app's custom URL scheme
+  // (see AndroidManifest.xml's intent-filter on this Activity); singleTask
+  // launchMode is what makes that redeliver here via onNewIntent() instead
+  // of spinning up a second instance of the app.
+  @Override
+  public void onNewIntent(Intent intent) {
+    super.onNewIntent(intent);
+    setIntent(intent);
+    Uri data = intent.getData();
+    if (data == null) return;
+    String fragment = data.getFragment();
+    if (fragment == null) return;
+    String jsFragment = JSONObject.quote(fragment);
+    getBridge().getWebView().evaluateJavascript(
+        "window.handleOAuthRedirect && window.handleOAuthRedirect(" + jsFragment + ");", null);
   }
 
   public class AndroidBridge {

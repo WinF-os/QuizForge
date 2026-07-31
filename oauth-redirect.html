@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Returning to sQUIZit…</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 420px; margin: 0 auto; padding: 60px 24px; text-align: center; color: #12172B; background: #FFF8F0; }
+  h1 { font-size: 1.2rem; }
+  p { color: #6b7280; line-height: 1.5; }
+  a.btn { display: inline-block; margin-top: 20px; padding: 14px 28px; background: #F07824; color: #fff; text-decoration: none; border-radius: 999px; font-weight: 700; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #16110B; color: #E5E7EB; }
+    p { color: #9CA3AF; }
+  }
+</style>
+</head>
+<body>
+
+<h1 id="statusTitle">Returning to sQUIZit…</h1>
+<p id="statusText">Hang on while we hand this back to the app.</p>
+<a class="btn" id="manualLink" href="#" hidden>Tap to return to sQUIZit</a>
+
+<script>
+// Google's OAuth server redirects here (an https URL, which is all it will
+// ever accept as a redirect_uri) after the user consents in the system
+// browser. This page's only job is to hand the result off to the actual
+// app via its custom URL scheme -- Google Identity Services itself refuses
+// to run inside an embedded WebView at all, so the OAuth step has to
+// happen in a real browser and hop back in through here instead of the
+// old in-WebView GIS popup flow. See app.js's connectDriveNative().
+const hash = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
+const params = new URLSearchParams(hash);
+
+if (params.get('error')) {
+  document.getElementById('statusTitle').textContent = 'Google sign-in was cancelled';
+  document.getElementById('statusText').textContent = params.get('error_description') || params.get('error');
+} else if (!params.get('access_token')) {
+  document.getElementById('statusTitle').textContent = 'Nothing to return';
+  document.getElementById('statusText').textContent = 'This page is only meant to be opened as part of sQUIZit\'s Google Drive sign-in.';
+} else {
+  const target = 'io.github.winfos.squizit://oauth2redirect#' + hash;
+  const link = document.getElementById('manualLink');
+  link.href = target;
+  link.hidden = false;
+  // Auto-hop back in -- works in most cases, but some browsers block a
+  // script-initiated navigation to a custom scheme without a fresh user
+  // gesture, which is why the manual button above is always shown too.
+  location.href = target;
+}
+</script>
+
+</body>
+</html>
