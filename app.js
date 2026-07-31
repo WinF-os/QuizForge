@@ -1151,7 +1151,7 @@ function updateLiveQuizScore() {
 // input below it, not fed into grading at all. Fresh/blank on every
 // question render (drawings intentionally don't persist across
 // navigation or save -- it's scratch work, not exam content).
-const SCRATCHPAD_COLORS = ['#12172B', '#E0455C', '#1B2E8F', '#22B27D'];
+const SCRATCHPAD_COLORS = ['#12172B', '#E0455C', '#F07824', '#22B27D'];
 
 function scratchpadHtml() {
   return `
@@ -2052,31 +2052,31 @@ function buildStandaloneQuizHtml(quiz, examTitle, subject) {
 <title>${esc(examTitle)} — sQUIZit Exam</title>
 <style>
   :root { color-scheme: light dark; }
-  body { font-family: system-ui, -apple-system, sans-serif; max-width: 640px; margin: 0 auto; padding: 20px 16px 60px; line-height: 1.5; color: #12172B; background: #F5F7FC; }
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 640px; margin: 0 auto; padding: 20px 16px 60px; line-height: 1.5; color: #12172B; background: #FFF8F0; }
   h1 { font-size: 1.3rem; margin-bottom: 4px; }
   .sub { color: #6b7280; font-size: 0.85rem; margin-bottom: 20px; }
-  .q { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin-bottom: 14px; background: #fff; }
+  .q { border: 1px solid #F2E4D2; border-radius: 12px; padding: 16px; margin-bottom: 14px; background: #fff; }
   .q-prompt { font-weight: 600; margin-bottom: 10px; }
-  .choice { display: block; width: 100%; text-align: left; padding: 10px 14px; margin-bottom: 6px; border: 1.5px solid #e5e7eb; border-radius: 8px; background: none; font-size: 0.92rem; cursor: pointer; font-family: inherit; }
-  .choice.sel { border-color: #1B2E8F; background: #E7EAFB; font-weight: 700; }
+  .choice { display: block; width: 100%; text-align: left; padding: 10px 14px; margin-bottom: 6px; border: 1.5px solid #F2E4D2; border-radius: 8px; background: none; font-size: 0.92rem; cursor: pointer; font-family: inherit; }
+  .choice.sel { border-color: #F07824; background: #FFEAD4; font-weight: 700; }
   .choice.correct { border-color: #22B27D; background: #e8f8f1; }
   .choice.incorrect { border-color: #E0455C; background: #fdecee; }
-  input[type=text], textarea { width: 100%; padding: 10px 12px; border: 1.5px solid #e5e7eb; border-radius: 8px; font-size: 0.92rem; box-sizing: border-box; font-family: inherit; }
-  select { width: 100%; padding: 8px; border: 1.5px solid #e5e7eb; border-radius: 8px; font-size: 0.9rem; font-family: inherit; }
+  input[type=text], textarea { width: 100%; padding: 10px 12px; border: 1.5px solid #F2E4D2; border-radius: 8px; font-size: 0.92rem; box-sizing: border-box; font-family: inherit; }
+  select { width: 100%; padding: 8px; border: 1.5px solid #F2E4D2; border-radius: 8px; font-size: 0.9rem; font-family: inherit; }
   .match-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
   .match-row span { flex: 1; font-weight: 600; font-size: 0.88rem; }
   .match-row select { flex: 1; }
-  .ans-note { margin-top: 10px; padding: 10px; background: #f3f4f6; border-radius: 8px; font-size: 0.85rem; }
-  #btnSubmit { width: 100%; padding: 14px; background: #1B2E8F; color: #fff; border: none; border-radius: 999px; font-size: 1rem; font-weight: 700; cursor: pointer; margin-top: 10px; font-family: inherit; }
+  .ans-note { margin-top: 10px; padding: 10px; background: #FFF3D0; border-radius: 8px; font-size: 0.85rem; }
+  #btnSubmit { width: 100%; padding: 14px; background: #F07824; color: #fff; border: none; border-radius: 999px; font-size: 1rem; font-weight: 700; cursor: pointer; margin-top: 10px; font-family: inherit; }
   #btnSubmit:disabled { opacity: 0.6; }
-  #score { text-align: center; padding: 20px; background: #1B2E8F; color: #fff; border-radius: 16px; margin-bottom: 20px; display: none; }
+  #score { text-align: center; padding: 20px; background: #F07824; color: #fff; border-radius: 16px; margin-bottom: 20px; display: none; }
   #score .pct { font-size: 2.2rem; font-weight: 800; }
   @media (prefers-color-scheme: dark) {
-    body { background: #12172B; color: #E5E7EB; }
-    .q { background: #1a1f36; border-color: #2A2F45; }
-    .choice { border-color: #2A2F45; color: #E5E7EB; }
-    input, textarea, select { background: #1a1f36; border-color: #2A2F45; color: #E5E7EB; }
-    .ans-note { background: #232a47; }
+    body { background: #16110B; color: #E5E7EB; }
+    .q { background: #211810; border-color: #362415; }
+    .choice { border-color: #362415; color: #E5E7EB; }
+    input, textarea, select { background: #211810; border-color: #362415; color: #E5E7EB; }
+    .ans-note { background: #3A2E0A; }
   }
 </style>
 </head>
