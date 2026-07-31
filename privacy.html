@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>QuizForge — Privacy Policy</title>
+<title>sQUIZit — Privacy Policy</title>
 <style>
   :root { color-scheme: light dark; }
   body { font-family: system-ui, -apple-system, sans-serif; max-width: 680px; margin: 0 auto; padding: 32px 20px 80px; line-height: 1.6; color: #12172B; background: #F5F7FC; }
@@ -24,38 +24,38 @@
 </head>
 <body>
 
-<h1>QuizForge — Privacy Policy</h1>
+<h1>sQUIZit — Privacy Policy</h1>
 <p class="updated">Last updated: July 27, 2026</p>
 
-<p>QuizForge (<a href="https://winf-os.github.io/QuizForge/">winf-os.github.io/QuizForge</a>) turns a photo of notes or textbook pages into a ready-to-take exam. This page explains, plainly, what data the app touches and where it goes.</p>
+<p>sQUIZit (<a href="https://winf-os.github.io/sQUIZit/">winf-os.github.io/sQUIZit</a>) turns a photo of notes or textbook pages into a ready-to-take exam. This page explains, plainly, what data the app touches and where it goes.</p>
 
 <h2>The short version</h2>
 <div class="card">
   <ul>
-    <li>QuizForge has no server-side accounts and no backend database. There is nothing for QuizForge itself to leak, sell, or lose, because it doesn't hold onto your data centrally in the first place.</li>
+    <li>sQUIZit has no server-side accounts and no backend database. There is nothing for sQUIZit itself to leak, sell, or lose, because it doesn't hold onto your data centrally in the first place.</li>
     <li>Your Gemini API key and your exam library live only in your own browser's local storage, on your own device.</li>
     <li>Google Drive backup, if you turn it on, can only see and manage a single backup file it creates itself — never anything else in your Drive.</li>
   </ul>
 </div>
 
 <h2>Your Gemini API key</h2>
-<p>QuizForge is "bring your own key" — you create your own free Google Gemini API key and paste it into the app. It's saved only in your browser's <code>localStorage</code> and sent, per request, to a Supabase Edge Function that forwards it to Google's Gemini API on your behalf. QuizForge's server does not store, log, or retain your key at any point — it only passes through on each individual request.</p>
+<p>sQUIZit is "bring your own key" — you create your own free Google Gemini API key and paste it into the app. It's saved only in your browser's <code>localStorage</code> and sent, per request, to a Supabase Edge Function that forwards it to Google's Gemini API on your behalf. sQUIZit's server does not store, log, or retain your key at any point — it only passes through on each individual request.</p>
 
 <h2>Your exam content</h2>
-<p>Photos or text you provide to generate an exam are sent (via the same proxy) to Google's Gemini API to produce questions, and are not separately stored by QuizForge afterward. The exams you create — questions, your answers, scores, attempt history — are saved only in your browser's local storage, on your own device, unless you explicitly export or back them up yourself (see below).</p>
+<p>Photos or text you provide to generate an exam are sent (via the same proxy) to Google's Gemini API to produce questions, and are not separately stored by sQUIZit afterward. The exams you create — questions, your answers, scores, attempt history — are saved only in your browser's local storage, on your own device, unless you explicitly export or back them up yourself (see below).</p>
 
 <h2>Backup &amp; Restore</h2>
 <p>Profile → Backup &amp; Restore offers two ways to keep a copy of your exam library, both opt-in:</p>
 <ul>
   <li><strong>On this device:</strong> downloads a plain JSON file to your phone or computer. This file never leaves your device unless you move it yourself.</li>
-  <li><strong>Google Drive:</strong> if you connect your Google account, QuizForge can save/restore that same backup as a single file in your own Drive. This uses Google's <code>drive.file</code> OAuth scope, which restricts the app to only the files it creates itself — QuizForge cannot see, read, or modify any other file in your Google Drive, and cannot access your Drive at all unless you explicitly tap Connect.</li>
+  <li><strong>Google Drive:</strong> if you connect your Google account, sQUIZit can save/restore that same backup as a single file in your own Drive. This uses Google's <code>drive.file</code> OAuth scope, which restricts the app to only the files it creates itself — sQUIZit cannot see, read, or modify any other file in your Google Drive, and cannot access your Drive at all unless you explicitly tap Connect.</li>
 </ul>
 
-<h2>What QuizForge does not do</h2>
+<h2>What sQUIZit does not do</h2>
 <ul>
   <li>No user accounts or sign-up.</li>
   <li>No advertising, no ad tracking, no analytics cookies.</li>
-  <li>No selling or sharing of your data with third parties, because QuizForge never holds a copy of it to begin with.</li>
+  <li>No selling or sharing of your data with third parties, because sQUIZit never holds a copy of it to begin with.</li>
 </ul>
 
 <h2>Third-party services involved</h2>
@@ -66,7 +66,7 @@
 </ul>
 
 <h2>Questions</h2>
-<p>QuizForge is an open-source project. Source code, and a way to reach the maintainer with questions about this policy, is available at <a href="https://github.com/WinF-os/QuizForge">github.com/WinF-os/QuizForge</a>.</p>
+<p>sQUIZit is an open-source project. Source code, and a way to reach the maintainer with questions about this policy, is available at <a href="https://github.com/WinF-os/sQUIZit">github.com/WinF-os/sQUIZit</a>.</p>
 
 </body>
 </html>

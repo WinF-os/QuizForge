@@ -1,6 +1,6 @@
 {
-  "name": "QuizForge",
-  "short_name": "QuizForge",
+  "name": "sQUIZit",
+  "short_name": "sQUIZit",
   "description": "Turn a photo of your notes into an AI-generated interactive exam.",
   "start_url": "./index.html",
   "scope": "./",

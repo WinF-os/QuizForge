@@ -1,5 +1,5 @@
 // Keep in sync with APP_VERSION in app.js
-const CACHE_NAME = 'quizforge-QF_SYS_V.1.2.0';
+const CACHE_NAME = 'squizit-QF_SYS_V.1.2.5';
 const CORE_ASSETS = [
   './',
   './index.html',

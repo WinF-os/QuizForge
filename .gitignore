@@ -52,9 +52,9 @@ android/app/src/main/java/io/*
 android/app/src/main/java/io/github/*
 !android/app/src/main/java/io/github/winfos/
 android/app/src/main/java/io/github/winfos/*
-!android/app/src/main/java/io/github/winfos/quizforge/
-android/app/src/main/java/io/github/winfos/quizforge/*
-!android/app/src/main/java/io/github/winfos/quizforge/MainActivity.java
+!android/app/src/main/java/io/github/winfos/squizit/
+android/app/src/main/java/io/github/winfos/squizit/*
+!android/app/src/main/java/io/github/winfos/squizit/MainActivity.java
 www/
 
 # Local dev tooling config, not part of the app

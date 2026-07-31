@@ -1,4 +1,4 @@
-# QuizForge — Design
+# sQUIZit — Design
 
 AI-powered exam/quiz generator: capture or upload photos of notes, textbook pages, or slides, and generate an interactive exam from them using Google Gemini.
 
@@ -27,7 +27,7 @@ This is a static client app with no server of its own. A raw Gemini API key can'
 ## Project layout
 
 ```
-QuizForge/
+sQUIZit/
   index.html        # single page: header, 4 tab-panels (Home/Create/Library/Profile), camera overlay
   style.css          # design tokens (CSS vars, incl. light/dark via data-theme) + all component styles
   app.js             # state object + render functions for every screen, fetch calls to Edge Functions

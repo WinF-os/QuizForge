@@ -1,4 +1,4 @@
-package io.github.winfos.quizforge;
+package io.github.winfos.squizit;
 
 import android.os.Bundle;
 import android.webkit.JavascriptInterface;

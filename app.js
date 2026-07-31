@@ -1707,7 +1707,7 @@ function setupAutoSave() {
 // Show version popup
 // Real check-for-update: fetches the live deployed app.js and compares its
 // APP_VERSION against this build's own -- same idea as Winfinity's own
-// update system, simplified since QuizForge's service worker doesn't have
+// update system, simplified since sQUIZit's service worker doesn't have
 // a SKIP_WAITING message-based lifecycle to hook into (see sw.js). "Update
 // Now" instead unregisters the current worker and clears every cache
 // before reloading, which forces a fully fresh fetch of everything -- less
@@ -1721,7 +1721,7 @@ function setupAutoSave() {
 // context and switches to a different real mechanism: check GitHub's
 // latest Release via its API, and if newer, open that release's .apk
 // directly. Because it's built with the SAME package ID
-// (io.github.winfos.quizforge) and a higher version number, Android
+// (io.github.winfos.squizit) and a higher version number, Android
 // installs it as an UPDATE to the existing app in place -- not a second,
 // separate app -- the same way any sideloaded APK update works outside
 // the Play Store. The user still has to tap through Android's own
@@ -1743,7 +1743,7 @@ function extractVersionNumber(str) {
 
 async function checkForUpdateNative() {
   try {
-    const res = await fetch('https://api.github.com/repos/WinF-os/QuizForge/releases/latest');
+    const res = await fetch('https://api.github.com/repos/WinF-os/sQUIZit/releases/latest');
     if (!res.ok) return null;
     const data = await res.json();
     const asset = (data.assets || []).find((a) => a.name.toLowerCase().endsWith('.apk'));
@@ -1760,7 +1760,7 @@ async function checkForUpdateNative() {
 async function checkForUpdate() {
   if (isNativeApp()) return checkForUpdateNative();
   try {
-    const res = await fetch('https://winf-os.github.io/QuizForge/app.js?nocache=' + Date.now());
+    const res = await fetch('https://winf-os.github.io/sQUIZit/app.js?nocache=' + Date.now());
     if (!res.ok) return null;
     const text = await res.text();
     const match = text.match(/APP_VERSION\s*=\s*'([^']+)'/);
@@ -1810,7 +1810,7 @@ async function showVersionPopup() {
       <div class="version-popup" id="versionPopup">
         <div class="version-popup-content">
           <div class="version-popup-header">
-            <h2 class="version-popup-title">QuizForge</h2>
+            <h2 class="version-popup-title">sQUIZit</h2>
             <span class="version-popup-version">${esc(APP_VERSION)}</span>
           </div>
           <p id="versionPopupStatus">Checking for updates…</p>
@@ -2034,7 +2034,7 @@ function editQuizFromLibrary(item) {
 }
 
 // Builds a single, fully self-contained HTML file that can take this exam
-// completely offline -- no dependency on QuizForge itself, no network call,
+// completely offline -- no dependency on sQUIZit itself, no network call,
 // no external CSS/JS/fonts (everything inlined). Objective question types
 // grade themselves client-side with the same logic as the real app
 // (deliberately re-implemented inline, not shared code, since this file
@@ -2049,7 +2049,7 @@ function buildStandaloneQuizHtml(quiz, examTitle, subject) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(examTitle)} — QuizForge Exam</title>
+<title>${esc(examTitle)} — sQUIZit Exam</title>
 <style>
   :root { color-scheme: light dark; }
   body { font-family: system-ui, -apple-system, sans-serif; max-width: 640px; margin: 0 auto; padding: 20px 16px 60px; line-height: 1.5; color: #12172B; background: #F5F7FC; }
@@ -2082,7 +2082,7 @@ function buildStandaloneQuizHtml(quiz, examTitle, subject) {
 </head>
 <body>
 <h1>${esc(examTitle)}</h1>
-<p class="sub">${esc(subject || 'General')} &bull; ${questions.length} Questions &bull; Shared from QuizForge (offline copy, not synced back)</p>
+<p class="sub">${esc(subject || 'General')} &bull; ${questions.length} Questions &bull; Shared from sQUIZit (offline copy, not synced back)</p>
 <div id="score"><div class="pct" id="scorePct"></div><div id="scoreSummary"></div></div>
 <div id="questions"></div>
 <button id="btnSubmit" type="button">Submit Answers</button>
@@ -2266,7 +2266,7 @@ function driveConfigured() {
 
 function buildBackupPayload() {
   return {
-    app: 'QuizForge',
+    app: 'sQUIZit',
     version: APP_VERSION,
     exportedAt: new Date().toISOString(),
     library: LIBRARY_EXAMS,
@@ -2274,7 +2274,7 @@ function buildBackupPayload() {
 }
 
 function applyBackupPayload(payload) {
-  if (!payload || !Array.isArray(payload.library)) throw new Error('This file doesn\'t look like a QuizForge backup.');
+  if (!payload || !Array.isArray(payload.library)) throw new Error('This file doesn\'t look like a sQUIZit backup.');
   LIBRARY_EXAMS.length = 0;
   LIBRARY_EXAMS.push(...payload.library);
   saveLibraryExams();
@@ -2284,7 +2284,7 @@ function applyBackupPayload(payload) {
 
 function downloadBackupJSON() {
   const payload = buildBackupPayload();
-  const filename = `quizforge-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  const filename = `squizit-backup-${new Date().toISOString().slice(0, 10)}.json`;
   const file = new File([JSON.stringify(payload, null, 2)], filename, { type: 'application/json' });
   const url = URL.createObjectURL(file);
   const a = document.createElement('a');
@@ -2383,8 +2383,8 @@ async function saveToDrive() {
   $('backupStatusText').textContent = 'Backing up to Drive…';
   const payload = buildBackupPayload();
   const existingId = localStorage.getItem(DRIVE_FILE_ID_KEY);
-  const boundary = 'quizforge-backup-boundary';
-  const metadata = { name: 'quizforge-backup.json', mimeType: 'application/json' };
+  const boundary = 'squizit-backup-boundary';
+  const metadata = { name: 'squizit-backup.json', mimeType: 'application/json' };
   const body =
     `--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(metadata)}\r\n` +
     `--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(payload)}\r\n--${boundary}--`;

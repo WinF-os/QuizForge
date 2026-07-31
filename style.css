@@ -236,8 +236,9 @@ textarea.text-input { resize: vertical; font-family: inherit; }
   background: var(--color-bg);
 }
 .app-header-back { color: var(--color-primary); display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; }
-.app-header-title { flex: 1; font-size: 1.05rem; font-weight: 800; color: var(--color-primary); letter-spacing: -0.01em; }
-.app-header-version { font-size: 0.6rem; font-weight: 600; color: var(--color-text-muted); letter-spacing: 0; vertical-align: middle; margin-left: 4px; }
+.app-header-title { flex: 1; display: flex; align-items: center; }
+.app-header-logo { height: 26px; width: auto; display: block; }
+.app-header-version { font-size: 0.6rem; font-weight: 600; color: var(--color-text-muted); letter-spacing: 0; vertical-align: middle; margin-left: 6px; }
 .app-header-avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--color-primary-tint); color: var(--color-primary); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 
 /* Bottom nav */
