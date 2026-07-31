@@ -55,6 +55,21 @@ android/app/src/main/java/io/github/winfos/*
 !android/app/src/main/java/io/github/winfos/squizit/
 android/app/src/main/java/io/github/winfos/squizit/*
 !android/app/src/main/java/io/github/winfos/squizit/MainActivity.java
+!android/app/src/main/java/io/github/winfos/squizit/SplashActivity.java
+# Also hand-written: the native splash screen's theme, layout, and glow
+# drawable (see SplashActivity.java) -- everything else under res/ is
+# regenerable default Capacitor icon/splash-image output.
+!android/app/src/main/res/
+android/app/src/main/res/*
+!android/app/src/main/res/values/
+android/app/src/main/res/values/*
+!android/app/src/main/res/values/styles.xml
+!android/app/src/main/res/layout/
+android/app/src/main/res/layout/*
+!android/app/src/main/res/layout/activity_splash.xml
+!android/app/src/main/res/drawable/
+android/app/src/main/res/drawable/*
+!android/app/src/main/res/drawable/splash_glow.xml
 www/
 
 # Local dev tooling config, not part of the app
