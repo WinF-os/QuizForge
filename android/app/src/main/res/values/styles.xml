@@ -15,10 +15,10 @@
         <item name="android:windowBackground">@android:color/white</item>
     </style>
 
-    <!-- Full-screen theme for SplashActivity (see SplashActivity.java) --
+    <!-- Full-screen theme for SplashActivity (see SplashActivity.java),
          plain AppCompat rather than Theme.SplashScreen since the throbbing
-         glow + fixed 2s minimum are handled entirely by that Activity's own
-         layout/animation, not by the OS splash-screen mechanism. -->
+         glow and fixed 2s minimum are handled entirely by that Activity's
+         own layout/animation, not by the OS splash-screen mechanism. -->
     <style name="SplashTheme" parent="Theme.AppCompat.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>

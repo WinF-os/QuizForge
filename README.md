@@ -65,7 +65,10 @@ The `android/` folder is a Capacitor project pointed at `webDir: "www"` (see `ca
 # 1. This project has no bundler, so www/ does NOT stay in sync with the
 #    root files on its own -- copy the current source in first. Skipping
 #    this step is why an APK can get rebuilt and still show an old version.
-cp app.js index.html style.css sw.js config.js www/
+#    icons/ and manifest.webmanifest are easy to forget here since the app
+#    still half-works without them (missing icons, not a crash).
+cp app.js index.html style.css sw.js config.js manifest.webmanifest www/
+mkdir -p www/icons && cp icons/icon.png icons/wordmark.png www/icons/
 
 # 2. Bump android/app/build.gradle's versionCode (and versionName to match
 #    APP_VERSION) -- see the comment right there. Skipping THIS step is why

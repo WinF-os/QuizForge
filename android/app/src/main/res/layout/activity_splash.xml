@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Native cold-start splash shown by SplashActivity for a fixed minimum
-     duration -- see SplashActivity.java for why this is a real layout
+     duration, see SplashActivity.java for why this is a real layout
      instead of the AndroidX SplashScreen API. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"

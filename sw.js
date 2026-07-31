@@ -1,5 +1,5 @@
 // Keep in sync with APP_VERSION in app.js
-const CACHE_NAME = 'squizit-QF_SYS_V.1.2.5';
+const CACHE_NAME = 'squizit-QF_SYS_V.1.2.6';
 const CORE_ASSETS = [
   './',
   './index.html',
