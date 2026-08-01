@@ -28,6 +28,7 @@ Deno.serve(async (req) => {
       subject = '',
       images = [],
       text = '',
+      topicMode = false,
       questionTypes = [],
       difficulty = 'medium',
       count = 10,
@@ -49,16 +50,27 @@ Deno.serve(async (req) => {
       .map((t: string) => `- ${TYPE_GUIDE[t]}`)
       .join('\n')
 
-    const promptText = [
-      `You are an expert exam writer. Create a ${count}-question exam from the provided source material.`,
-      examTitle ? `Exam title: ${examTitle}` : null,
-      subject ? `Subject: ${subject}` : null,
-      `Difficulty: ${difficulty}.`,
-      `Only use these question types, distributing the ${count} questions roughly evenly across them:`,
-      typeInstructions,
-      text.trim() ? `Additional source text:\n"""\n${text.trim()}\n"""` : null,
-      'Base every question strictly on the provided source material (images and/or text). Every question object must include a short "explanation" of the correct answer. Return only the structured data — no commentary.',
-    ].filter(Boolean).join('\n\n')
+    const promptText = topicMode
+      ? [
+          `You are an expert exam writer. Create a ${count}-question exam about the following topic/subject idea, drawing on your own general knowledge -- no source material was provided, so do not ask for any:`,
+          `"""\n${text.trim()}\n"""`,
+          examTitle ? `Exam title: ${examTitle}` : null,
+          subject ? `Subject: ${subject}` : null,
+          `Difficulty: ${difficulty}.`,
+          `Only use these question types, distributing the ${count} questions roughly evenly across them:`,
+          typeInstructions,
+          'Every question object must include a short "explanation" of the correct answer. Return only the structured data — no commentary.',
+        ].filter(Boolean).join('\n\n')
+      : [
+          `You are an expert exam writer. Create a ${count}-question exam from the provided source material.`,
+          examTitle ? `Exam title: ${examTitle}` : null,
+          subject ? `Subject: ${subject}` : null,
+          `Difficulty: ${difficulty}.`,
+          `Only use these question types, distributing the ${count} questions roughly evenly across them:`,
+          typeInstructions,
+          text.trim() ? `Additional source text:\n"""\n${text.trim()}\n"""` : null,
+          'Base every question strictly on the provided source material (images and/or text). Every question object must include a short "explanation" of the correct answer. Return only the structured data — no commentary.',
+        ].filter(Boolean).join('\n\n')
 
     const parts: Record<string, unknown>[] = [{ text: promptText }]
     for (const image of images) {

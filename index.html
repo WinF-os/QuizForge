@@ -98,6 +98,7 @@
 
         <div class="library-toggle" id="modeToggle">
           <button type="button" class="library-toggle-btn is-active" data-mode="ai">AI Generate</button>
+          <button type="button" class="library-toggle-btn" data-mode="topic">Topic Idea</button>
           <button type="button" class="library-toggle-btn" data-mode="manual">Manual Build</button>
           <button type="button" class="library-toggle-btn" data-mode="auto">Auto-Extract</button>
         </div>
@@ -126,55 +127,57 @@
           </select>
         </label>
 
-        <div>
-          <p class="section-heading" style="margin-bottom:10px;">Source Content</p>
-          <div class="source-cards">
-            <button type="button" class="source-card" id="btnUploadDocument">
-              <span class="source-card-icon source-card-icon--primary">
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M8 8l4-4 4 4" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></svg>
-              </span>
-              <span class="source-card-title">Upload Document</span>
-              <span class="source-card-sub">Photos of notes or textbook pages</span>
-            </button>
+        <div id="sourceContentSection">
+          <div>
+            <p class="section-heading" style="margin-bottom:10px;">Source Content</p>
+            <div class="source-cards">
+              <button type="button" class="source-card" id="btnUploadDocument">
+                <span class="source-card-icon source-card-icon--primary">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M8 8l4-4 4 4" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></svg>
+                </span>
+                <span class="source-card-title">Upload Document</span>
+                <span class="source-card-sub">Photos of notes or textbook pages</span>
+              </button>
 
-            <button type="button" class="source-card" id="btnCameraCapture">
-              <span class="source-card-icon source-card-icon--teal">
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" /><circle cx="12" cy="13" r="3.5" /></svg>
-              </span>
-              <span class="source-card-title">Camera Capture</span>
-              <span class="source-card-sub">Scan handwritten notes live</span>
-            </button>
+              <button type="button" class="source-card" id="btnCameraCapture">
+                <span class="source-card-icon source-card-icon--teal">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" /><circle cx="12" cy="13" r="3.5" /></svg>
+                </span>
+                <span class="source-card-title">Camera Capture</span>
+                <span class="source-card-sub">Scan handwritten notes live</span>
+              </button>
 
-            <button type="button" class="source-card" id="btnPasteText">
-              <span class="source-card-icon source-card-icon--muted">
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="1.5" /><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 10h6M9 14h6M9 18h3" /></svg>
-              </span>
-              <span class="source-card-title">Paste Text</span>
-              <span class="source-card-sub">Type or paste content directly</span>
-            </button>
+              <button type="button" class="source-card" id="btnPasteText">
+                <span class="source-card-icon source-card-icon--muted">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="1.5" /><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 10h6M9 14h6M9 18h3" /></svg>
+                </span>
+                <span class="source-card-title">Paste Text</span>
+                <span class="source-card-sub">Type or paste content directly</span>
+              </button>
+            </div>
+            <input type="file" id="fileInput" accept="image/*" multiple hidden>
           </div>
-          <input type="file" id="fileInput" accept="image/*" multiple hidden>
+
+          <div class="source-preview-row" id="sourcePreviewRow" hidden></div>
+          <p class="empty-note" id="legibilityCheckingNote" hidden>Checking image quality…</p>
+
+          <div class="card tip-inline-card">
+            <span class="tip-inline-icon">💡</span>
+            <div>
+              <p class="tip-inline-title">Quick tip</p>
+              <p class="screen-sub">Clear, well-lit photos of a single page work best. You can add more than one page.</p>
+            </div>
+          </div>
         </div>
 
-        <div class="source-preview-row" id="sourcePreviewRow" hidden></div>
-        <p class="empty-note" id="legibilityCheckingNote" hidden>Checking image quality…</p>
-
         <label class="field-block" id="pasteTextBlock" hidden>
-          <span class="field-label">Pasted content</span>
+          <span class="field-label" id="pasteTextLabel">Pasted content</span>
           <textarea class="text-input" id="pastedTextArea" rows="6" placeholder="Paste notes, an article, or a summary of the material here…"></textarea>
         </label>
 
         <div class="card banner-card" id="smartBlueprintCard">
           <p class="section-heading">Smart Blueprinting</p>
           <p class="screen-sub">Gemini reads your material and maps it to question types and difficulty automatically.</p>
-        </div>
-
-        <div class="card tip-inline-card">
-          <span class="tip-inline-icon">💡</span>
-          <div>
-            <p class="tip-inline-title">Quick tip</p>
-            <p class="screen-sub">Clear, well-lit photos of a single page work best. You can add more than one page.</p>
-          </div>
         </div>
 
         <p class="empty-note" id="sourceEmptyNote" hidden></p>

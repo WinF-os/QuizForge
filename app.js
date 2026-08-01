@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.2.12';
+const APP_VERSION = 'QF_SYS_V.1.2.13';
 
 // Diagnostic only: captures the first uncaught error/rejection anywhere in
 // the app so it can be surfaced in the UI (Profile > Backup & Restore) --
@@ -500,13 +500,33 @@ document.querySelectorAll('#modeToggle .library-toggle-btn').forEach((btn) => {
 });
 
 function setGenerationMode(mode) {
+  const previousMode = state.generationMode;
   state.generationMode = mode;
   document.querySelectorAll('#modeToggle .library-toggle-btn').forEach((btn) => {
     btn.classList.toggle('is-active', btn.dataset.mode === mode);
   });
   $('smartBlueprintCard').hidden = mode !== 'ai';
+  // Topic Idea skips photos/pasted-material entirely -- it reuses the same
+  // pastedTextArea/state.sourceText as Paste Text (so generate-quiz gets
+  // sent through the exact same path), just always shown instead of
+  // toggled, and relabeled since here it's the topic itself, not material
+  // to extract from.
+  $('sourceContentSection').hidden = mode === 'topic';
+  if (mode === 'topic') {
+    $('pasteTextBlock').hidden = false;
+  } else if (previousMode === 'topic') {
+    $('pasteTextBlock').hidden = true;
+  }
+  $('pasteTextLabel').textContent = mode === 'topic' ? 'Topic or subject idea' : 'Pasted content';
+  $('pastedTextArea').placeholder = mode === 'topic'
+    ? 'e.g. Photosynthesis in plants, causes of World War II, basic algebra equations…'
+    : 'Paste notes, an article, or a summary of the material here…';
+
   if (mode === 'ai') {
     $('sourceScreenSub').textContent = 'Provide your source material and let AI draft the exam.';
+    $('btnContinueToConfigure').textContent = 'Continue to Configuration';
+  } else if (mode === 'topic') {
+    $('sourceScreenSub').textContent = 'Describe a topic or idea and let AI write the exam from its own knowledge — no source material needed.';
     $('btnContinueToConfigure').textContent = 'Continue to Configuration';
   } else if (mode === 'manual') {
     $('sourceScreenSub').textContent = 'Skip the AI — build every question yourself, no source material required.';
@@ -587,7 +607,7 @@ function renderSourcePreview() {
 
 function updateContinueGating() {
   const hasSource = state.sourceImages.length > 0 || state.sourceText.trim().length > 0;
-  const missingKey = state.generationMode === 'ai' && !state.geminiApiKeys.length;
+  const missingKey = (state.generationMode === 'ai' || state.generationMode === 'topic') && !state.geminiApiKeys.length;
   const missingTitleOrSubject = !state.examTitle.trim() || !state.subject;
   const note = $('sourceEmptyNote');
   if (missingTitleOrSubject) {
@@ -858,12 +878,17 @@ async function runGeneration() {
       subject: state.subject,
       images: state.sourceImages.map((img) => ({ dataUrl: img.dataUrl, mimeType: parseDataUrlMime(img.dataUrl, img.mimeType) })),
       text: state.sourceText,
+      topicMode: state.generationMode === 'topic',
       questionTypes: typesToList(state.config.types),
       difficulty: state.config.difficulty,
       count: state.config.count,
     });
 
-    if (!data?.questions?.length) throw new Error('The AI did not return any questions. Try again with clearer source material.');
+    if (!data?.questions?.length) {
+      throw new Error(state.generationMode === 'topic'
+        ? 'The AI did not return any questions. Try a clearer or more specific topic.'
+        : 'The AI did not return any questions. Try again with clearer source material.');
+    }
 
     data.timeLimitMinutes = Number($('timeLimitInput').value) || 0;
     state.quiz = data;
