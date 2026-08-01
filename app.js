@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.2.9';
+const APP_VERSION = 'QF_SYS_V.1.2.10';
 
 // Diagnostic only: captures the first uncaught error/rejection anywhere in
 // the app so it can be surfaced in the UI (Profile > Backup & Restore) --
@@ -104,6 +104,33 @@ function fileToDataUrl(file) {
     reader.onload = () => resolve(reader.result);
     reader.onerror = reject;
     reader.readAsDataURL(file);
+  });
+}
+
+// Source photos/uploads get re-encoded down to this cap before ever leaving
+// the device -- full camera-resolution JPEGs (several MB each, more once
+// base64'd into the generate-quiz request body) were dying mid-upload as a
+// bare "Failed to fetch" on weaker mobile connections, especially in the
+// packaged Android app.
+const MAX_SOURCE_IMAGE_DIM = 1600;
+const SOURCE_IMAGE_QUALITY = 0.8;
+
+function resizeImageDataUrl(dataUrl, maxDim = MAX_SOURCE_IMAGE_DIM, quality = SOURCE_IMAGE_QUALITY) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
   });
 }
 
@@ -235,8 +262,13 @@ $('btnAddGeminiKey').addEventListener('click', () => {
   onGeminiKeyChanged();
 });
 
-function isQuotaError(message) {
-  return /RESOURCE_EXHAUSTED|429|exceeded your current quota/i.test(message || '');
+// Any error that's specific to the key/project rather than the request itself
+// -- quota exhaustion, but also a key's whole GCP project getting suspended
+// or otherwise denied (403 PERMISSION_DENIED) or an invalid/revoked key.
+// These should fall through to the next saved key instead of failing the
+// whole generation on the first bad key.
+function isKeyRotationError(message) {
+  return /RESOURCE_EXHAUSTED|429|exceeded your current quota|PERMISSION_DENIED|403|API_KEY_INVALID|API key not valid/i.test(message || '');
 }
 
 async function callWithKeyRotation(name, body) {
@@ -249,12 +281,12 @@ async function callWithKeyRotation(name, body) {
       state.activeKeyIndex = idx;
       return data;
     } catch (err) {
-      if (!isQuotaError(err.message)) throw err;
+      if (!isKeyRotationError(err.message)) throw err;
     }
   }
-  const quotaErr = new Error('All your saved Gemini keys have used up their free quota for now.');
-  quotaErr.allKeysExhausted = true;
-  throw quotaErr;
+  const rotationErr = new Error('None of your saved Gemini keys are working right now (quota limits or access issues).');
+  rotationErr.allKeysExhausted = true;
+  throw rotationErr;
 }
 
 /* ============ Navigation ============ */
@@ -510,7 +542,7 @@ $('subjectSelect').addEventListener('change', (e) => { state.subject = e.target.
 $('btnUploadDocument').addEventListener('click', () => $('fileInput').click());
 $('fileInput').addEventListener('change', async (event) => {
   const files = Array.from(event.target.files || []);
-  const loaded = await Promise.all(files.map(async (file) => ({ dataUrl: await fileToDataUrl(file), mimeType: file.type || 'image/jpeg' })));
+  const loaded = await Promise.all(files.map(async (file) => ({ dataUrl: await resizeImageDataUrl(await fileToDataUrl(file)), mimeType: 'image/jpeg' })));
   state.sourceImages.push(...loaded);
   event.target.value = '';
   renderSourcePreview();
@@ -600,11 +632,12 @@ function closeCamera() {
 
 $('btnCameraShutter').addEventListener('click', () => {
   const video = $('cameraVideo');
+  const scale = Math.min(1, MAX_SOURCE_IMAGE_DIM / Math.max(video.videoWidth, video.videoHeight));
   const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  canvas.width = Math.round(video.videoWidth * scale);
+  canvas.height = Math.round(video.videoHeight * scale);
   canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+  const dataUrl = canvas.toDataURL('image/jpeg', SOURCE_IMAGE_QUALITY);
   const capturedImage = { dataUrl, mimeType: 'image/jpeg' };
   state.sourceImages.push(capturedImage);
   closeCamera();
@@ -831,7 +864,7 @@ async function runGeneration() {
     $('generatingMessage').textContent = '';
     $('generatingErrorCard').hidden = false;
     if (err.allKeysExhausted) {
-      $('generatingErrorText').innerHTML = `${esc(err.message)} <a href="#" class="js-goto-profile-link">Add another key</a> or <a href="https://console.cloud.google.com/billing" target="_blank" rel="noopener">enable billing</a> on one of them.`;
+      $('generatingErrorText').innerHTML = `${esc(err.message)} <a href="#" class="js-goto-profile-link">Add another key</a> or check the failing one(s) at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.`;
       const link = $('generatingErrorText').querySelector('.js-goto-profile-link');
       link?.addEventListener('click', (e) => { e.preventDefault(); switchTab('profile'); });
     } else {
