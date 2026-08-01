@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.2.10';
+const APP_VERSION = 'QF_SYS_V.1.2.11';
 
 // Diagnostic only: captures the first uncaught error/rejection anywhere in
 // the app so it can be surfaced in the UI (Profile > Backup & Restore) --
@@ -240,8 +240,19 @@ function onGeminiKeyChanged() {
   if (state.createStep === 'configure') updateGenerateGating();
 }
 
+// Route through Google's account-chooser page instead of opening AI Studio
+// directly -- opening the target URL straight would silently reuse whichever
+// Google account happens to already be signed into that browser. Forcing the
+// chooser first lets the user pick a specific account (useful when one
+// account's Gemini project has been flagged/denied and they want to try a
+// different one) instead of guessing which account they're on.
+function openGoogleUrlWithAccountChooser(targetUrl) {
+  const chooserUrl = `https://accounts.google.com/AccountChooser?continue=${encodeURIComponent(targetUrl)}`;
+  window.open(chooserUrl, '_blank', 'noopener');
+}
+
 $('btnGetGeminiKey').addEventListener('click', () => {
-  window.open('https://aistudio.google.com/apikey', '_blank', 'noopener');
+  openGoogleUrlWithAccountChooser('https://aistudio.google.com/apikey');
 });
 
 $('btnPasteGeminiKey').addEventListener('click', async () => {
@@ -864,9 +875,11 @@ async function runGeneration() {
     $('generatingMessage').textContent = '';
     $('generatingErrorCard').hidden = false;
     if (err.allKeysExhausted) {
-      $('generatingErrorText').innerHTML = `${esc(err.message)} <a href="#" class="js-goto-profile-link">Add another key</a> or check the failing one(s) at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.`;
+      $('generatingErrorText').innerHTML = `${esc(err.message)} <a href="#" class="js-goto-profile-link">Add another key</a> or check the failing one(s) at <a href="#" class="js-goto-aistudio-link">aistudio.google.com/apikey</a>.`;
       const link = $('generatingErrorText').querySelector('.js-goto-profile-link');
       link?.addEventListener('click', (e) => { e.preventDefault(); switchTab('profile'); });
+      const aistudioLink = $('generatingErrorText').querySelector('.js-goto-aistudio-link');
+      aistudioLink?.addEventListener('click', (e) => { e.preventDefault(); openGoogleUrlWithAccountChooser('https://aistudio.google.com/apikey'); });
     } else {
       $('generatingErrorText').textContent = err.message || 'Something went wrong generating the exam.';
     }
