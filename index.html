@@ -401,7 +401,12 @@
       </div>
 
       <div class="card">
-        <p class="section-heading">Updates</p>
+        <div class="section-heading-row">
+          <p class="section-heading">Updates</p>
+          <button type="button" class="btn btn-icon" id="btnShareUpdateLink" aria-label="Share download link" title="Share download link">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5 15.4 17.5M15.4 6.5 8.6 10.5" /></svg>
+          </button>
+        </div>
         <p class="screen-sub" style="margin-top:6px;">You're on <span id="profileVersionText"></span>.</p>
         <span class="update-badge" id="profileUpdateBadge" hidden>Update available</span>
         <button type="button" class="btn btn--outline btn--block" id="btnProfileCheckUpdate" style="margin-top:8px;">Check for Updates</button>

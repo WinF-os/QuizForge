@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.2.11';
+const APP_VERSION = 'QF_SYS_V.1.2.12';
 
 // Diagnostic only: captures the first uncaught error/rejection anywhere in
 // the app so it can be surfaced in the UI (Profile > Backup & Restore) --
@@ -1966,6 +1966,37 @@ document.getElementById('btnProfileCheckUpdate').addEventListener('click', async
       ? `A new version is available: ${esc(remoteVersion)}. Tap Update Now to download it -- Android will ask you to confirm installing it as an update.`
       : `A new version is available: ${esc(remoteVersion)}. Tap Update Now to install it.`;
     if (isAutoUpdateEnabled()) applyUpdate();
+  }
+});
+
+// Share the latest version's download link through the OS share sheet --
+// native app shares the actual .apk release asset (what the user needs to
+// hand the app to someone else); web shares the live site, since there's no
+// separate downloadable artifact for the PWA.
+document.getElementById('btnShareUpdateLink').addEventListener('click', async () => {
+  let url = 'https://winf-os.github.io/sQUIZit/';
+  let text = 'sQUIZit -- turn a photo of your notes into an AI-generated practice exam.';
+
+  if (isNativeApp()) {
+    if (!latestApkDownloadUrl) await checkForUpdateNative();
+    url = latestApkDownloadUrl || 'https://github.com/WinF-os/sQUIZit/releases/latest';
+    text = `sQUIZit${latestKnownVersion ? ' v' + latestKnownVersion : ''} for Android -- APK download`;
+  }
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: 'sQUIZit', text, url });
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') return; // user backed out of the share sheet -- not a failure
+    }
+  }
+
+  try {
+    await navigator.clipboard.writeText(url);
+    alert(`Link copied to clipboard:\n${url}`);
+  } catch (e) {
+    alert(url);
   }
 });
 
