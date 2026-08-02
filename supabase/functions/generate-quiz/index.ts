@@ -45,10 +45,11 @@ Deno.serve(async (req) => {
       return jsonResponse({ message: 'Provide source images or pasted text.' }, 400)
     }
 
-    const typeInstructions = questionTypes
-      .filter((t: string) => TYPE_GUIDE[t])
-      .map((t: string) => `- ${TYPE_GUIDE[t]}`)
-      .join('\n')
+    const validTypes = questionTypes.filter((t: string) => TYPE_GUIDE[t])
+    if (validTypes.length === 0) {
+      return jsonResponse({ message: 'Select at least one question type.' }, 400)
+    }
+    const typeInstructions = validTypes.map((t: string) => `- ${TYPE_GUIDE[t]}`).join('\n')
 
     const promptText = topicMode
       ? [
@@ -91,7 +92,16 @@ Deno.serve(async (req) => {
               items: {
                 type: 'OBJECT',
                 properties: {
-                  type: { type: 'STRING', enum: ['multipleChoice', 'trueFalse', 'identification', 'matching', 'calculation', 'essay'] },
+                  // Constrained to exactly what the user checked in Configure
+                  // (validTypes), not every type sQUIZit knows about -- was
+                  // previously the full fixed list here regardless of
+                  // selection, so the schema itself never actually stopped
+                  // Gemini from picking an unchecked type; only the prompt's
+                  // plain-English "only use these types" line did, which the
+                  // model didn't reliably follow. responseSchema enums are a
+                  // hard constraint Gemini's structured output actually
+                  // respects, unlike prompt wording.
+                  type: { type: 'STRING', enum: validTypes },
                   prompt: { type: 'STRING' },
                   choices: { type: 'ARRAY', items: { type: 'STRING' } },
                   correctAnswer: { type: 'STRING' },

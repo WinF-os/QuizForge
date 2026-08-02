@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.2.14';
+const APP_VERSION = 'QF_SYS_V.1.2.16';
 
 // Diagnostic only: captures the first uncaught error/rejection anywhere in
 // the app so it can be surfaced in the UI (Profile > Backup & Restore) --
@@ -407,7 +407,8 @@ function renderLibrary() {
           </button>
           ${showRetake ? `<button type="button" class="link-btn js-retake-exam">Retake</button>` : ''}
           <button type="button" class="link-btn js-edit-exam">Edit</button>
-          <button type="button" class="link-btn js-share-exam">Share</button>
+          <button type="button" class="link-btn js-share-exam">Share File</button>
+          <button type="button" class="link-btn js-share-link-exam">Share Link</button>
         </div>
       </div>
     </article>
@@ -439,6 +440,21 @@ function renderLibrary() {
     card.querySelector('.js-retake-exam')?.addEventListener('click', () => retakeQuizFromLibrary(exam));
     card.querySelector('.js-edit-exam')?.addEventListener('click', () => editQuizFromLibrary(exam));
     card.querySelector('.js-share-exam')?.addEventListener('click', () => shareQuizAsHtml(exam));
+    card.querySelector('.js-share-link-exam')?.addEventListener('click', async (e) => {
+      // Uploading takes a real network round-trip (unlike the instant file
+      // share above), so this needs its own loading state -- both to give
+      // feedback and to stop a double-tap from uploading the same quiz twice.
+      const btn = e.currentTarget;
+      const original = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Uploading…';
+      try {
+        await shareQuizAsLink(exam);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    });
   });
   $('libraryList').querySelectorAll('.js-create-new').forEach((btn) => {
     btn.addEventListener('click', () => switchTab('create'));
@@ -1233,6 +1249,7 @@ function scratchpadHtml() {
           ${SCRATCHPAD_COLORS.map((c, i) => `<button type="button" class="scratchpad-swatch${i === 0 ? ' is-active' : ''}" data-color="${c}" style="background:${c}" aria-label="Color"></button>`).join('')}
           <button type="button" class="scratchpad-tool is-active" data-tool="pen" aria-label="Pen">✎</button>
           <button type="button" class="scratchpad-tool" data-tool="eraser" aria-label="Eraser">🧹</button>
+          <button type="button" class="scratchpad-tool" data-tool="pan" aria-label="Pan/drag">✋</button>
         </div>
         <input type="range" min="1" max="16" value="3" class="scratchpad-thickness" id="scratchpadThickness" aria-label="Line thickness">
         <div class="scratchpad-actions">
@@ -1262,21 +1279,41 @@ function setupScratchpad() {
   let color = SCRATCHPAD_COLORS[0];
   let zoom = 1;
   let drawing = false;
+  let lastPanX = 0;
+  let lastPanY = 0;
 
   function canvasPoint(e) {
     const rect = canvas.getBoundingClientRect();
     return { x: (e.clientX - rect.left) / rect.width * canvas.width, y: (e.clientY - rect.top) / rect.height * canvas.height };
   }
 
+  // touch-action:none on the canvas (needed so a finger drawing a line
+  // doesn't also trigger the browser's native scroll/pinch-zoom) means
+  // there was previously no way to move around a zoomed-in canvas by touch
+  // at all -- only the +/-/reset buttons above. Pan is a third tool, not a
+  // gesture, so it doesn't fight with normal drawing: pointer drag scrolls
+  // the viewport instead of drawing only while it's selected.
   canvas.addEventListener('pointerdown', (e) => {
     drawing = true;
     canvas.setPointerCapture(e.pointerId);
+    if (tool === 'pan') {
+      lastPanX = e.clientX;
+      lastPanY = e.clientY;
+      return;
+    }
     const p = canvasPoint(e);
     ctx.beginPath();
     ctx.moveTo(p.x, p.y);
   });
   canvas.addEventListener('pointermove', (e) => {
     if (!drawing) return;
+    if (tool === 'pan') {
+      viewport.scrollLeft -= (e.clientX - lastPanX);
+      viewport.scrollTop -= (e.clientY - lastPanY);
+      lastPanX = e.clientX;
+      lastPanY = e.clientY;
+      return;
+    }
     const p = canvasPoint(e);
     ctx.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : 'source-over';
     ctx.strokeStyle = color;
@@ -1293,6 +1330,7 @@ function setupScratchpad() {
       $('scratchpadViewport').closest('.scratchpad-card').querySelectorAll('.scratchpad-swatch, .scratchpad-tool').forEach((b) => b.classList.remove('is-active'));
       btn.classList.add('is-active');
       $('scratchpadViewport').closest('.scratchpad-card').querySelector('.scratchpad-tool[data-tool="pen"]').classList.add('is-active');
+      canvas.style.cursor = 'crosshair';
     });
   });
   $('scratchpadViewport').closest('.scratchpad-card').querySelectorAll('.scratchpad-tool').forEach((btn) => {
@@ -1300,6 +1338,7 @@ function setupScratchpad() {
       tool = btn.dataset.tool;
       $('scratchpadViewport').closest('.scratchpad-card').querySelectorAll('.scratchpad-tool').forEach((b) => b.classList.remove('is-active'));
       btn.classList.add('is-active');
+      canvas.style.cursor = tool === 'pan' ? 'grab' : 'crosshair';
     });
   });
 
@@ -2239,10 +2278,14 @@ function buildStandaloneQuizHtml(quiz, examTitle, subject) {
   .match-row span { flex: 1; font-weight: 600; font-size: 0.88rem; }
   .match-row select { flex: 1; }
   .ans-note { margin-top: 10px; padding: 10px; background: #FFF3D0; border-radius: 8px; font-size: 0.85rem; }
-  #btnSubmit { width: 100%; padding: 14px; background: #F07824; color: #fff; border: none; border-radius: 999px; font-size: 1rem; font-weight: 700; cursor: pointer; margin-top: 10px; font-family: inherit; }
-  #btnSubmit:disabled { opacity: 0.6; }
+  #btnSubmit, #btnStartQuiz { width: 100%; padding: 14px; background: #F07824; color: #fff; border: none; border-radius: 999px; font-size: 1rem; font-weight: 700; cursor: pointer; margin-top: 10px; font-family: inherit; }
+  #btnSubmit:disabled, #btnStartQuiz:disabled { opacity: 0.6; }
+  #btnRetake { width: 100%; padding: 14px; background: none; color: #F07824; border: 1.5px solid #F07824; border-radius: 999px; font-size: 1rem; font-weight: 700; cursor: pointer; margin-top: 10px; font-family: inherit; display: none; }
   #score { text-align: center; padding: 20px; background: #F07824; color: #fff; border-radius: 16px; margin-bottom: 20px; display: none; }
   #score .pct { font-size: 2.2rem; font-weight: 800; }
+  .field { display: block; margin-bottom: 14px; font-size: 0.85rem; font-weight: 600; }
+  .field input { display: block; width: 100%; margin-top: 6px; font-weight: 400; }
+  #takerLine { font-weight: 600; margin-bottom: 4px; }
   @media (prefers-color-scheme: dark) {
     body { background: #16110B; color: #E5E7EB; }
     .q { background: #211810; border-color: #362415; }
@@ -2255,9 +2298,23 @@ function buildStandaloneQuizHtml(quiz, examTitle, subject) {
 <body>
 <h1>${esc(examTitle)}</h1>
 <p class="sub">${esc(subject || 'General')} &bull; ${questions.length} Questions &bull; Shared from sQUIZit (offline copy, not synced back)</p>
-<div id="score"><div class="pct" id="scorePct"></div><div id="scoreSummary"></div></div>
-<div id="questions"></div>
-<button id="btnSubmit" type="button">Submit Answers</button>
+
+<div id="studentInfoGate" class="q">
+  <div class="q-prompt">Before you begin, please fill in:</div>
+  <label class="field">School/University<input type="text" id="siSchool" placeholder="Required"></label>
+  <label class="field">Full Name<input type="text" id="siName" placeholder="Required"></label>
+  <label class="field">Grade<input type="text" id="siGrade" placeholder="Required"></label>
+  <label class="field">Section (optional)<input type="text" id="siSection" placeholder="Optional"></label>
+  <button id="btnStartQuiz" type="button" disabled>Start Quiz</button>
+</div>
+
+<div id="quizContent" style="display:none;">
+  <p id="takerLine"></p>
+  <div id="score"><div class="pct" id="scorePct"></div><div id="scoreSummary"></div></div>
+  <div id="questions"></div>
+  <button id="btnSubmit" type="button">Submit Answers</button>
+  <button id="btnRetake" type="button">Retake Quiz</button>
+</div>
 <!-- Read by the sQUIZit Android app when this file is opened via "Open
      with sQUIZit" -- MainActivity extracts this block by id and hands the
      JSON straight to the real app UI instead of this standalone fallback. -->
@@ -2268,6 +2325,30 @@ function buildStandaloneQuizHtml(quiz, examTitle, subject) {
   var questions = DATA.questions;
   var answers = {};
   var submitted = false;
+
+  // Collected once, before the first attempt, so whoever's results this is
+  // can be identified -- e.g. by a teacher who shared the file out and is
+  // reviewing what comes back. Retaking (see btnRetake below) reuses this
+  // instead of asking again, since it's the same person in the same
+  // session -- only a fresh open of the file asks again.
+  var siSchool = document.getElementById('siSchool');
+  var siName = document.getElementById('siName');
+  var siGrade = document.getElementById('siGrade');
+  var siSection = document.getElementById('siSection');
+  var btnStartQuiz = document.getElementById('btnStartQuiz');
+
+  function updateStartEnabled(){
+    btnStartQuiz.disabled = !(siSchool.value.trim() && siName.value.trim() && siGrade.value.trim());
+  }
+  [siSchool, siName, siGrade].forEach(function(inp){ inp.addEventListener('input', updateStartEnabled); });
+
+  btnStartQuiz.addEventListener('click', function(){
+    var info = { school: siSchool.value.trim(), name: siName.value.trim(), grade: siGrade.value.trim(), section: siSection.value.trim() };
+    document.getElementById('studentInfoGate').style.display = 'none';
+    document.getElementById('quizContent').style.display = '';
+    document.getElementById('takerLine').textContent = info.name + ' — ' + info.school + ' — Grade ' + info.grade + (info.section ? ' ' + info.section : '');
+    window.scrollTo(0,0);
+  });
 
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   function normalize(s){ return String(s==null?'':s).toLowerCase().trim().replace(/[.,!?;:'"()]/g,'').replace(/\\s+/g,' '); }
@@ -2371,6 +2452,21 @@ function buildStandaloneQuizHtml(quiz, examTitle, subject) {
     document.getElementById('scoreSummary').textContent = correctCount + ' / ' + objectiveTotal + ' objective correct';
     document.getElementById('btnSubmit').disabled = true;
     document.getElementById('btnSubmit').textContent = 'Submitted';
+    document.getElementById('btnRetake').style.display = 'block';
+    window.scrollTo(0,0);
+  });
+
+  document.getElementById('btnRetake').addEventListener('click', function(){
+    submitted = false;
+    answers = {};
+    document.getElementById('score').style.display = 'none';
+    el.querySelectorAll('.choice').forEach(function(b){ b.classList.remove('sel','correct','incorrect'); b.disabled = false; });
+    el.querySelectorAll('input[type=text], textarea').forEach(function(inp){ inp.value = ''; });
+    el.querySelectorAll('.matching select').forEach(function(sel){ sel.value = ''; });
+    el.querySelectorAll('.ans-note').forEach(function(n){ n.style.display = 'none'; n.innerHTML = ''; });
+    document.getElementById('btnSubmit').disabled = false;
+    document.getElementById('btnSubmit').textContent = 'Submit Answers';
+    document.getElementById('btnRetake').style.display = 'none';
     window.scrollTo(0,0);
   });
 })();
@@ -2433,6 +2529,51 @@ async function shareQuizAsHtml(item) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// The file-share above works for Bluetooth/WhatsApp/Gmail/etc, but apps
+// like Facebook Messenger only reliably accept plain text/links through the
+// system share sheet, not arbitrary file attachments -- Messenger's own
+// manifest, not something fixable from this app's side. This uploads the
+// same standalone export to Supabase Storage (see supabase/functions/
+// share-quiz) and shares a signed, time-limited URL instead, which every
+// share target accepts since it's just text.
+async function shareQuizAsLink(item) {
+  if (!item || !item.quizData) return;
+  const title = item.examTitle || item.title || 'Quiz';
+  const html = buildStandaloneQuizHtml(item.quizData, title, item.subject);
+
+  let url;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/share-quiz`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ html }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || `Upload failed (${res.status})`);
+    url = data.url;
+    if (!url) throw new Error('No link returned.');
+  } catch (e) {
+    alert(`Couldn't create a share link: ${e.message || e}`);
+    return;
+  }
+
+  const text = `${title} — take this sQUIZit exam. Link works for 7 days.`;
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, text, url });
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') return; // user backed out of the share sheet -- not a failure
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    alert(`Link copied to clipboard (works for 7 days):\n${url}`);
+  } catch (e) {
+    alert(`Share link (works for 7 days):\n${url}`);
+  }
 }
 
 // Open a completed exam read-only, reusing the same results renderer a

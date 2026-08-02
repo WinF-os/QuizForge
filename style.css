@@ -441,8 +441,8 @@ textarea.text-input { resize: vertical; font-family: inherit; }
 .scratchpad-thickness { width: 70px; }
 .scratchpad-actions { display: flex; gap: 4px; margin-left: auto; }
 .scratchpad-actions .count-btn { width: 26px; height: 26px; font-size: 0.8rem; }
-.scratchpad-viewport { height: 180px; overflow: auto; background: #fff; touch-action: none; }
-.scratchpad-viewport.is-expanded { height: 420px; }
+.scratchpad-viewport { height: 450px; overflow: auto; background: #fff; touch-action: none; }
+.scratchpad-viewport.is-expanded { height: 640px; }
 .scratchpad-viewport canvas { display: block; touch-action: none; }
 .quiz-runner-nav { display: flex; gap: var(--space-3); }
 .quiz-runner-nav .btn { flex: 1; }

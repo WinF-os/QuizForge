@@ -35,9 +35,18 @@ supabase link --project-ref your-project-ref
 supabase functions deploy generate-quiz
 supabase functions deploy grade-essay
 supabase functions deploy check-image-legibility
+supabase functions deploy share-quiz
 ```
 
-(In practice this project's functions have been deployed by pasting each one's `index.ts` directly into the Supabase dashboard's Edge Functions UI rather than via CLI — both work, but the dashboard's single-file editor can't resolve a relative import to `_shared/`, which is why `check-image-legibility` inlines its own CORS helper instead of importing it like the other two do.)
+(In practice this project's functions have been deployed by pasting each one's `index.ts` directly into the Supabase dashboard's Edge Functions UI rather than via CLI — both work, but the dashboard's single-file editor can't resolve a relative import to `_shared/`, which is why `check-image-legibility` and `share-quiz` inline their own CORS helper instead of importing it like the other two do.)
+
+`share-quiz` backs the Library screen's **Share Link** button (an alternative to **Share File** — see the Share section below) and needs one manual setup step the others don't: a Storage bucket.
+
+1. In the Supabase dashboard, go to **Storage → New bucket**, name it exactly `shared-quizzes`, and leave it **private** (do not make it public — the function hands out short-lived signed URLs instead, which work on a private bucket and expire on their own).
+2. Deploy `share-quiz` the same way as the other functions (CLI or dashboard paste, above).
+3. No secrets to add — the function reads `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`, which every Edge Function gets automatically.
+
+Shared links expire after 7 days (`SIGNED_URL_EXPIRY_SECONDS` in the function); the uploaded files themselves aren't automatically deleted, only the link stops working — fine for the free tier's 1GB at the size of a quiz export, but worth knowing if this ever needs a real cleanup job.
 
 ### 3. Add your Gemini API key (BYOK)
 
