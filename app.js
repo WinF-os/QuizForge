@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.2.16';
+const APP_VERSION = 'QF_SYS_V.1.2.17';
 
 // Diagnostic only: captures the first uncaught error/rejection anywhere in
 // the app so it can be surfaced in the UI (Profile > Backup & Restore) --
@@ -1973,11 +1973,13 @@ async function showVersionPopup() {
           </div>
           <p id="versionPopupStatus">Checking for updates…</p>
           <div class="version-popup-actions">
-            <label class="toggle-switch">
-              <input type="checkbox" id="autoUpdateToggle">
-              <span class="slider"></span>
-            </label>
-            <span class="toggle-label">Auto-update</span>
+            <span id="autoUpdateRow">
+              <label class="toggle-switch">
+                <input type="checkbox" id="autoUpdateToggle">
+                <span class="slider"></span>
+              </label>
+              <span class="toggle-label">Auto-update</span>
+            </span>
             <button class="update-btn" id="updateButton" hidden>Update Now</button>
           </div>
         </div>
@@ -1994,9 +1996,21 @@ async function showVersionPopup() {
     popup.addEventListener('click', function (e) {
       if (e.target === popup) popup.classList.remove('is-visible');
     });
+
+    // Was: this toggle read isAutoUpdateEnabled() to set its own checked
+    // state, but that function hardcodes false for the native app (a
+    // deliberate rule -- applyUpdate() there opens an external APK
+    // download, which should never happen silently, only from an explicit
+    // tap). Net effect on-device: turning the toggle on saved fine, but the
+    // very next time this popup opened it read back as off again, forever
+    // -- looked exactly like the setting not sticking. There's genuinely
+    // nothing for this toggle to control in the native app (auto-apply can
+    // never fire there either way), so it's hidden there instead of shown
+    // in a state that can never be made to stick.
+    document.getElementById('autoUpdateRow').hidden = isNativeApp();
   }
 
-  document.getElementById('autoUpdateToggle').checked = isAutoUpdateEnabled();
+  document.getElementById('autoUpdateToggle').checked = localStorage.getItem('quizforge-auto-update') !== '0';
   popup.classList.add('is-visible');
 
   const statusEl = document.getElementById('versionPopupStatus');
