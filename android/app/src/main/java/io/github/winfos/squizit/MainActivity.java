@@ -7,6 +7,11 @@ import android.webkit.JavascriptInterface;
 import com.getcapacitor.BridgeActivity;
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 // Was briefly overridden to manually request CAMERA permission in onCreate(),
 // on the wrong assumption that Capacitor's WebView needed that pushed to it
 // ahead of time. It doesn't: com.getcapacitor.BridgeWebChromeClient's own
@@ -37,15 +42,73 @@ import org.json.JSONObject;
 // backgrounds the app (moveTaskToBack) rather than finishing the Activity,
 // so reopening it resumes exactly where it was.
 public class MainActivity extends BridgeActivity {
+  // Set from a cold-start VIEW intent (app launched fresh by tapping a
+  // shared quiz file) and consumed exactly once by AndroidBridge
+  // .getPendingSharedQuiz() below. Can't push it into the page directly at
+  // that point the way onNewIntent does further down -- the WebView hasn't
+  // finished running app.js yet, so window.importSharedQuiz wouldn't exist
+  // yet either. Stashing it here and letting app.js pull it once it's
+  // actually ready avoids that race entirely.
+  private String pendingSharedQuizJson = null;
+
   @Override
   public void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     getBridge().getWebView().addJavascriptInterface(new AndroidBridge(), "AndroidBridge");
+    handleSharedQuizIntent(getIntent(), false);
   }
 
   @Override
   public void onBackPressed() {
     getBridge().getWebView().evaluateJavascript("window.handleAndroidBack && window.handleAndroidBack();", null);
+  }
+
+  // Extension of the "open with sQUIZit" intent-filter in AndroidManifest.xml
+  // (registered on mime type "text/html", since content:// Uris from another
+  // app's share sheet don't carry a filename Android can match against).
+  // That means this can fire for ANY .html file the user opens system-wide,
+  // not just sQUIZit's own exports -- extractQuizJson() below only returns
+  // non-null for a real sQUIZit export (looks for the squizit-quiz-data
+  // script block shareQuizAsHtml()/buildStandaloneQuizHtml() in app.js
+  // embeds), so anything else is silently ignored and the app just opens
+  // normally, same as tapping the launcher icon.
+  private void handleSharedQuizIntent(Intent intent, boolean canEvaluateNow) {
+    if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) return;
+    Uri data = intent.getData();
+    if (data == null) return;
+    String scheme = data.getScheme();
+    // The OAuth redirect (custom app scheme, always carries a #fragment) is
+    // handled separately in onNewIntent below -- this path is only for real
+    // shared files, which arrive as content:// (almost always) or file://.
+    if (!"content".equals(scheme) && !"file".equals(scheme)) return;
+
+    String json = extractQuizJson(data);
+    if (json == null) return;
+
+    if (canEvaluateNow) {
+      String jsArg = JSONObject.quote(json);
+      getBridge().getWebView().evaluateJavascript(
+          "window.importSharedQuiz && window.importSharedQuiz(" + jsArg + ");", null);
+    } else {
+      pendingSharedQuizJson = json;
+    }
+  }
+
+  private String extractQuizJson(Uri uri) {
+    try (InputStream in = getContentResolver().openInputStream(uri)) {
+      if (in == null) return null;
+      ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+      byte[] chunk = new byte[8192];
+      int read;
+      while ((read = in.read(chunk)) != -1) buffer.write(chunk, 0, read);
+      String html = buffer.toString("UTF-8");
+      Matcher m = Pattern
+          .compile("<script type=\"application/json\" id=\"squizit-quiz-data\">(.*?)</script>", Pattern.DOTALL)
+          .matcher(html);
+      return m.find() ? m.group(1) : null;
+    } catch (Exception e) {
+      return null;
+    }
   }
 
   // Google Drive's OAuth step runs in the system browser, not this WebView
@@ -59,6 +122,10 @@ public class MainActivity extends BridgeActivity {
   public void onNewIntent(Intent intent) {
     super.onNewIntent(intent);
     setIntent(intent);
+    // singleTask means the app was already running when this fired, so the
+    // WebView/app.js are guaranteed loaded already -- safe to push straight
+    // in via evaluateJavascript, unlike the cold-start case in onCreate.
+    handleSharedQuizIntent(intent, true);
     Uri data = intent.getData();
     if (data == null) return;
     String fragment = data.getFragment();
@@ -72,6 +139,17 @@ public class MainActivity extends BridgeActivity {
     @JavascriptInterface
     public void minimizeApp() {
       runOnUiThread(() -> moveTaskToBack(true));
+    }
+
+    // Consume-once: called by app.js right after startup to pick up a quiz
+    // that was shared in while the app was cold (see onCreate above). Clears
+    // it immediately so relaunching from Recents afterward doesn't re-import
+    // the same file again.
+    @JavascriptInterface
+    public String getPendingSharedQuiz() {
+      String json = pendingSharedQuizJson;
+      pendingSharedQuizJson = null;
+      return json;
     }
   }
 }

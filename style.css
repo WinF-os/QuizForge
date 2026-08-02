@@ -195,6 +195,7 @@ img { max-width: 100%; display: block; }
 .btn:active { transform: scale(0.98); }
 .btn--primary { background: var(--color-primary); color: #fff; box-shadow: var(--shadow-float); }
 .btn--outline { background: transparent; border: 1.5px solid var(--color-primary); color: var(--color-primary); }
+.btn--danger.btn--outline { border-color: var(--color-danger); color: var(--color-danger); }
 .btn--block { width: 100%; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 

@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.2.13';
+const APP_VERSION = 'QF_SYS_V.1.2.14';
 
 // Diagnostic only: captures the first uncaught error/rejection anywhere in
 // the app so it can be surfaced in the UI (Profile > Backup & Restore) --
@@ -558,8 +558,9 @@ function resetCreateFlow() {
   $('manualExplanationInput').value = '';
   $('timeLimitInput').value = '';
   $('manualTimeLimitInput').value = '';
-  $('btnRegenerateQuiz').hidden = true; // both are edit-only actions -- nothing to regenerate from or copy over for a genuinely new quiz
+  $('btnRegenerateQuiz').hidden = true; // all three are edit-only actions -- nothing to regenerate, copy, or delete for a genuinely new quiz
   $('btnSaveAsNewCopy').hidden = true;
+  $('btnDeleteQuiz').hidden = true;
   renderSourcePreview();
   setGenerationMode('ai');
   renderManualBuilder();
@@ -1807,6 +1808,53 @@ function isNativeApp() {
   return typeof window.Capacitor !== 'undefined' && !!window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
 }
 
+// Receiving end of the "open a shared quiz in sQUIZit" flow (see
+// shareQuizAsHtml/buildStandaloneQuizHtml above for the sending end, and
+// MainActivity.java's intent-filter + onCreate/onNewIntent for how a tapped
+// .squizit.html file gets here). Imports it as a new Library draft and
+// drops the user straight there, rather than making them retype/reopen
+// anything.
+window.importSharedQuiz = function (rawJson) {
+  let data;
+  try { data = JSON.parse(rawJson); } catch (e) { return; }
+  if (!data || !Array.isArray(data.questions) || !data.questions.length) return;
+
+  const title = data.examTitle || 'Shared Quiz';
+  const newExam = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    subject: data.subject || 'General',
+    title,
+    examTitle: title,
+    questionCount: data.questions.length,
+    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    excerpt: data.questions[0]?.prompt || 'Shared from another sQUIZit user',
+    status: 'draft',
+    badge: data.questions.length.toString(),
+    tag: (data.subject || 'general').toLowerCase().replace(/\s+/g, '-'),
+    quizData: { questions: data.questions },
+    answers: {},
+    essayGrades: {},
+    quizIndex: 0,
+    history: [],
+  };
+  LIBRARY_EXAMS.unshift(newExam);
+  saveLibraryExams();
+  state.libraryTab = 'draft';
+  switchTab('library');
+  alert(`Imported "${title}" from a shared file — find it in Library (Drafts).`);
+};
+
+// Cold start straight from tapping a shared file: MainActivity can't safely
+// evaluateJavascript() before this script has finished running, so instead
+// it stashes the quiz data natively and this pulls it once, here, after
+// window.importSharedQuiz above already exists. The already-running-app
+// case (MainActivity.onNewIntent) pushes directly instead -- same pattern
+// as window.handleOAuthRedirect further down.
+if (isNativeApp() && window.AndroidBridge && window.AndroidBridge.getPendingSharedQuiz) {
+  const pendingSharedQuiz = window.AndroidBridge.getPendingSharedQuiz();
+  if (pendingSharedQuiz) window.importSharedQuiz(pendingSharedQuiz);
+}
+
 function extractVersionNumber(str) {
   const m = String(str || '').match(/(\d+\.\d+\.\d+)/);
   return m ? m[1] : null;
@@ -2131,9 +2179,28 @@ function editQuizFromLibrary(item) {
   setGenerationMode('manual');
   $('btnRegenerateQuiz').hidden = false;
   $('btnSaveAsNewCopy').hidden = false;
+  $('btnDeleteQuiz').hidden = false;
   renderManualBuilder();
   showCreateStep('manualBuilder');
 }
+
+// Edit screen's own delete action (see editQuizFromLibrary above) --
+// permanent, so confirm first the same way Backup & Restore's "Restore"
+// does elsewhere in this file.
+function deleteQuizFromLibrary(item) {
+  if (!item) return;
+  const title = item.examTitle || item.title || 'this quiz';
+  if (!confirm(`Delete "${title}"? This can't be undone.`)) return;
+  const idx = LIBRARY_EXAMS.findIndex((e) => e.id === item.id);
+  if (idx !== -1) LIBRARY_EXAMS.splice(idx, 1);
+  saveLibraryExams();
+  state.currentLibraryId = null;
+  switchTab('library');
+}
+$('btnDeleteQuiz').addEventListener('click', () => {
+  const item = LIBRARY_EXAMS.find((e) => e.id === state.currentLibraryId);
+  deleteQuizFromLibrary(item);
+});
 
 // Builds a single, fully self-contained HTML file that can take this exam
 // completely offline -- no dependency on sQUIZit itself, no network call,
@@ -2145,7 +2212,10 @@ function editQuizFromLibrary(item) {
 // Gemini key or network assumed once shared out.
 function buildStandaloneQuizHtml(quiz, examTitle, subject) {
   const questions = quiz.questions || [];
-  const dataJson = JSON.stringify({ examTitle, subject, questions });
+  // "</" is escaped so a question/answer containing the literal text
+  // "</script>" can't prematurely close this JSON block once it's embedded
+  // in the page below.
+  const dataJson = JSON.stringify({ examTitle, subject, questions }).replace(/<\//g, '<\\/');
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -2188,9 +2258,13 @@ function buildStandaloneQuizHtml(quiz, examTitle, subject) {
 <div id="score"><div class="pct" id="scorePct"></div><div id="scoreSummary"></div></div>
 <div id="questions"></div>
 <button id="btnSubmit" type="button">Submit Answers</button>
+<!-- Read by the sQUIZit Android app when this file is opened via "Open
+     with sQUIZit" -- MainActivity extracts this block by id and hands the
+     JSON straight to the real app UI instead of this standalone fallback. -->
+<script type="application/json" id="squizit-quiz-data">${dataJson}</script>
 <script>
 (function(){
-  var DATA = ${dataJson};
+  var DATA = JSON.parse(document.getElementById('squizit-quiz-data').textContent);
   var questions = DATA.questions;
   var answers = {};
   var submitted = false;
@@ -2305,20 +2379,47 @@ function buildStandaloneQuizHtml(quiz, examTitle, subject) {
 </html>`;
 }
 
-// Native share sheet (Messenger, etc.) when the browser/OS supports sharing
-// files; falls back to a plain download (desktop browsers, or wherever the
-// Web Share API with files isn't available) so the feature still works
-// everywhere, just less directly.
+// Was: Web Share API (navigator.share/canShare with files) for the native
+// app too, same as the plain web build. Looked right, but silently did
+// nothing on-device -- Capacitor's WebView either doesn't expose
+// navigator.canShare({files}) at all or refuses it for file objects, and
+// the URL.createObjectURL()+<a download> fallback that ran after it has no
+// download manager wired up inside a WebView, so it also did nothing.
+// Net effect: tapping Share in the native app produced no error and no
+// visible result -- indistinguishable from "broken." Native now goes
+// through the real Filesystem+Share Capacitor plugins instead, which drive
+// Android's actual ACTION_SEND file-share intent (Messenger, Bluetooth,
+// Gmail, etc.) -- the same mechanism every other Android app uses to share
+// a file. Plain web (GitHub Pages / desktop) keeps the original Web
+// Share-then-download path, which does work in real browsers.
 async function shareQuizAsHtml(item) {
   if (!item || !item.quizData) return;
   const title = item.examTitle || item.title || 'Quiz';
   const html = buildStandaloneQuizHtml(item.quizData, title, item.subject);
-  const filename = `${title.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '') || 'quiz'}.html`;
-  const file = new File([html], filename, { type: 'text/html' });
+  // .squizit.html, not plain .html -- lets the sQUIZit Android app (which
+  // registers itself as a "text/html" opener, see AndroidManifest.xml) tell
+  // its own exported quizzes apart from every other html file on the
+  // receiving phone. MainActivity only tries to pull quiz data out of files
+  // that end this way; anything else it opens just shows as a normal page.
+  const filename = `${title.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '') || 'quiz'}.squizit.html`;
+  const shareText = `${title} — open this on a phone with sQUIZit installed to take it in the app, or in any browser to take it offline.`;
 
+  if (isNativeApp()) {
+    try {
+      const { Filesystem, Share } = window.Capacitor.Plugins;
+      const written = await Filesystem.writeFile({ path: filename, data: html, directory: 'CACHE', encoding: 'utf8' });
+      await Share.share({ title, text: shareText, files: [written.uri], dialogTitle: 'Share Quiz' });
+    } catch (e) {
+      if (e && (e.message === 'Share canceled' || /cancel/i.test(e.message || ''))) return; // user backed out of the share sheet -- not a failure
+      alert(`Couldn't share this quiz: ${e && e.message ? e.message : e}`);
+    }
+    return;
+  }
+
+  const file = new File([html], filename, { type: 'text/html' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
-      await navigator.share({ files: [file], title, text: `${title} — open this file in a browser to take the quiz.` });
+      await navigator.share({ files: [file], title, text: shareText });
       return;
     } catch (e) {
       if (e.name === 'AbortError') return; // user backed out of the share sheet -- not a failure

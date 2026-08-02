@@ -65,6 +65,13 @@ Uses the `drive.file` scope only — sQUIZit can only see/manage files it create
 The `android/` folder is a Capacitor project pointed at `webDir: "www"` (see `capacitor.config.json`) — it bundles a snapshot of the web files *at build time* into the APK. There's no live auto-update: once installed, the app keeps running whatever was bundled until a new APK is built and reinstalled, the same as Winfinity's APKs.
 
 ```
+# 0. First time only (or after package.json changes) -- installs the
+#    Capacitor CLI plus the @capacitor/filesystem and @capacitor/share
+#    plugins the native Share button (Library -> Share) depends on for
+#    writing the exported quiz file and handing it to Android's real share
+#    sheet.
+npm install
+
 # 1. This project has no bundler, so www/ does NOT stay in sync with the
 #    root files on its own -- copy the current source in first. Skipping
 #    this step is why an APK can get rebuilt and still show an old version.

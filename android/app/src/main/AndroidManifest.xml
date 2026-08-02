@@ -40,6 +40,29 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="@string/custom_url_scheme" />
             </intent-filter>
+
+            <!-- Registers sQUIZit as a candidate ("Open with") handler for
+                 .html files, so a quiz shared from shareQuizAsHtml() in
+                 app.js can open straight into the real app on a receiving
+                 phone that has it installed, instead of just a plain
+                 browser. Scoped to the "text/html" mime type, not a
+                 filename pattern, because content:// Uris handed over by
+                 another app's share sheet (Messenger, Bluetooth, Gmail...)
+                 don't expose a real filename/path Android can match
+                 against, so mime type is the only thing reliably
+                 available. That does mean sQUIZit becomes a candidate
+                 opener for ANY .html file on the phone, not only its own
+                 exports; MainActivity only special-cases files that
+                 actually contain a sQUIZit quiz payload (looks for the
+                 squizit-quiz-data script block) and quietly ignores
+                 anything else, so this is safe even for unrelated html. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:mimeType="text/html" android:scheme="content" />
+                <data android:mimeType="text/html" android:scheme="file" />
+            </intent-filter>
         </activity>
 
         <provider
