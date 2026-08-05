@@ -36,6 +36,10 @@ supabase functions deploy generate-quiz
 supabase functions deploy grade-essay
 supabase functions deploy check-image-legibility
 supabase functions deploy share-quiz
+supabase functions deploy create-tracked-quiz
+supabase functions deploy get-tracked-quiz
+supabase functions deploy submit-quiz-attempt
+supabase functions deploy get-monitoring-data
 ```
 
 (In practice this project's functions have been deployed by pasting each one's `index.ts` directly into the Supabase dashboard's Edge Functions UI rather than via CLI — both work, but the dashboard's single-file editor can't resolve a relative import to `_shared/`, which is why `check-image-legibility` and `share-quiz` inline their own CORS helper instead of importing it like the other two do.)
@@ -47,6 +51,40 @@ supabase functions deploy share-quiz
 3. No secrets to add — the function reads `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`, which every Edge Function gets automatically.
 
 Shared links expire after 7 days (`SIGNED_URL_EXPIRY_SECONDS` in the function); the uploaded files themselves aren't automatically deleted, only the link stops working — fine for the free tier's 1GB at the size of a quiz export, but worth knowing if this ever needs a real cleanup job.
+
+`create-tracked-quiz`/`get-tracked-quiz`/`submit-quiz-attempt`/`get-monitoring-data` back the Library screen's **Share & Track** button and the **Monitoring** tab — a durable link (no expiry, unlike Share Link above) tied to whoever shared it, whose recipients' scores sync back automatically. These need two Postgres tables that don't exist by default — in the Supabase dashboard, go to **SQL Editor** and run:
+
+```sql
+create table public.tracked_quizzes (
+  id uuid primary key default gen_random_uuid(),
+  creator_id uuid not null,
+  exam_title text not null,
+  subject text,
+  quiz_data jsonb not null,
+  created_at timestamptz not null default now()
+);
+create index tracked_quizzes_creator_id_idx on public.tracked_quizzes (creator_id);
+alter table public.tracked_quizzes enable row level security;
+
+create table public.quiz_attempts (
+  id uuid primary key default gen_random_uuid(),
+  tracked_quiz_id uuid not null references public.tracked_quizzes(id) on delete cascade,
+  score_percent integer not null check (score_percent between 0 and 100),
+  recipient_surname text not null,
+  recipient_given_name text not null,
+  recipient_middle_name text,
+  recipient_school text,
+  recipient_grade_level text,
+  recipient_adviser text,
+  recipient_contact_number text,
+  recipient_email text,
+  submitted_at timestamptz not null default now()
+);
+create index quiz_attempts_tracked_quiz_id_idx on public.quiz_attempts (tracked_quiz_id);
+alter table public.quiz_attempts enable row level security;
+```
+
+Deliberately no `create policy` statements — RLS enabled with zero policies means the public anon key can't read/write these tables at all; every access goes through the four functions above using the service-role key, same posture as the `shared-quizzes` Storage bucket. There's no login system in this app (BYOK, no accounts), so "creator identity" is just a random id generated into that browser's `localStorage` the first time Share & Track is used — clearing storage or reinstalling loses the link to past shared quizzes and their Monitoring data.
 
 ### 3. Add your Gemini API key (BYOK)
 

@@ -374,6 +374,18 @@
       </div>
 
       <div class="card">
+        <p class="section-heading">Student Identity</p>
+        <div class="identity-summary-row" id="identitySummaryRow">
+          <div class="identity-summary-avatar" id="identitySummaryAvatar"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" /></svg></div>
+          <div class="identity-summary-body">
+            <p class="identity-summary-name" id="identitySummaryName">Not set up yet</p>
+            <p class="identity-summary-meta" id="identitySummaryMeta">Add your details so your exams are labeled correctly.</p>
+          </div>
+        </div>
+        <button type="button" class="btn btn--outline btn--block" id="btnEditStudentIdentity" style="margin-top:10px;">Edit Student Identity</button>
+      </div>
+
+      <div class="card">
         <p class="section-heading">Your Gemini API Keys</p>
         <p class="screen-sub" style="margin-top:6px;">Required for AI Generate and essay grading. Stored only in this browser. Add more than one (e.g. from different Google accounts) — sQUIZit automatically switches to the next one if a key's free quota runs out.</p>
 
@@ -451,6 +463,15 @@
       </div>
     </section>
 
+    <!-- ============ MONITORING ============ -->
+    <section class="screen tab-panel" id="tab-monitoring" data-tab="monitoring" hidden>
+      <div>
+        <h2 class="screen-title">Monitoring</h2>
+        <p class="screen-sub">Quizzes you've shared with Share &amp; Track, and who's taken them.</p>
+      </div>
+      <div class="monitoring-list" id="monitoringList"></div>
+    </section>
+
   </main>
 
   <nav class="bottom-nav" id="bottomNav">
@@ -470,12 +491,16 @@
       <span class="bottom-nav-icon"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" /></svg></span>
       <span class="bottom-nav-label">Profile</span>
     </button>
+    <button type="button" class="bottom-nav-item" data-target="monitoring">
+      <span class="bottom-nav-icon"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg></span>
+      <span class="bottom-nav-label">Monitoring</span>
+    </button>
   </nav>
 
   <div class="camera-overlay" id="cameraOverlay" hidden>
     <div class="camera-overlay-head">
       <button type="button" class="camera-close-btn" id="btnCameraClose" aria-label="Close camera">✕</button>
-      <span>Camera Capture</span>
+      <span id="cameraOverlayTitle">Camera Capture</span>
       <span style="width:32px;"></span>
     </div>
     <div class="camera-viewport">
@@ -484,7 +509,7 @@
     </div>
     <div class="camera-controls">
       <button type="button" class="camera-shutter-btn" id="btnCameraShutter" aria-label="Take photo" disabled></button>
-      <p class="camera-hint">Frame the page so the text is flat and well lit, then tap to capture.</p>
+      <p class="camera-hint" id="cameraHint">Frame the page so the text is flat and well lit, then tap to capture.</p>
     </div>
   </div>
 
@@ -500,6 +525,99 @@
         <button type="button" class="btn btn--outline btn--block" id="btnLegibilityReupload">Remove &amp; Reupload</button>
         <button type="button" class="btn btn--secondary btn--block" id="btnLegibilityIgnore">Ignore &amp; Continue Anyway</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Shown on first launch (mandatory, no close button -- see the init
+       block in app.js) to collect the Student Identity, and reopened
+       pre-filled/closable from Profile > Student Identity for edits. Same
+       markup, same save path both times -- see openStudentIdentityModal()
+       and the btnIdentitySave handler in app.js. -->
+  <div class="identity-modal" id="identityModal" hidden>
+    <div class="identity-modal-content">
+      <div class="identity-modal-headrow">
+        <div>
+          <h3 class="identity-modal-title">Student Identity</h3>
+          <p class="screen-sub" id="identityModalSub">Tell us who you are so your exams and results are labeled correctly.</p>
+        </div>
+        <button type="button" class="btn btn-icon" id="btnIdentityClose" aria-label="Close" title="Close">✕</button>
+      </div>
+
+      <div class="identity-photo-row">
+        <div class="identity-photo-preview" id="identityPhotoPreview"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" /></svg></div>
+        <div class="identity-photo-actions">
+          <button type="button" class="btn btn--outline" id="btnIdentityUploadPhoto">Upload Photo</button>
+          <button type="button" class="btn btn--outline" id="btnIdentityTakeSelfie">Take Selfie</button>
+        </div>
+      </div>
+      <input type="file" id="identityPhotoInput" accept="image/*" hidden>
+
+      <div class="identity-field-grid">
+        <label class="field-block">
+          <span class="field-label">Surname</span>
+          <input type="text" class="text-input" id="identitySurname" placeholder="e.g. Dela Cruz">
+        </label>
+        <label class="field-block">
+          <span class="field-label">Name</span>
+          <input type="text" class="text-input" id="identityGivenName" placeholder="e.g. Juan">
+        </label>
+        <label class="field-block">
+          <span class="field-label">Middle Name</span>
+          <input type="text" class="text-input" id="identityMiddleName" placeholder="e.g. Santos">
+        </label>
+        <label class="field-block">
+          <span class="field-label">Age</span>
+          <input type="number" class="text-input" id="identityAge" min="1" max="120" inputmode="numeric" placeholder="e.g. 16">
+        </label>
+        <label class="field-block">
+          <span class="field-label">School</span>
+          <input type="text" class="text-input" id="identitySchool" placeholder="e.g. Limay National High School">
+        </label>
+        <label class="field-block">
+          <span class="field-label">Grade Level</span>
+          <input type="text" class="text-input" id="identityGradeLevel" placeholder="e.g. Grade 10">
+        </label>
+        <label class="field-block">
+          <span class="field-label">Adviser / Teacher</span>
+          <input type="text" class="text-input" id="identityAdviser" placeholder="e.g. Ms. Reyes">
+        </label>
+        <label class="field-block">
+          <span class="field-label">Address</span>
+          <input type="text" class="text-input" id="identityAddress" placeholder="e.g. Limay, Bataan">
+        </label>
+        <label class="field-block">
+          <span class="field-label">Contact Number</span>
+          <input type="tel" class="text-input" id="identityContactNumber" placeholder="e.g. 09XXXXXXXXX">
+        </label>
+        <label class="field-block">
+          <span class="field-label">Email</span>
+          <input type="email" class="text-input" id="identityEmail" placeholder="e.g. juan@email.com">
+        </label>
+        <label class="field-block">
+          <span class="field-label">Guardian Name</span>
+          <input type="text" class="text-input" id="identityGuardianName" placeholder="e.g. Maria Dela Cruz">
+        </label>
+      </div>
+
+      <p class="identity-modal-error" id="identityModalError" hidden></p>
+
+      <button type="button" class="btn btn--primary btn--block" id="btnIdentitySave" style="margin-top:4px;">Save</button>
+    </div>
+  </div>
+
+  <!-- Opened from a Monitoring card's "View Recipients" button -- see
+       openMonitoringDetail() in app.js. Same headrow/close-button structure
+       as the Identity modal above. -->
+  <div class="monitoring-detail-modal" id="monitoringDetailModal" hidden>
+    <div class="monitoring-detail-modal-content">
+      <div class="identity-modal-headrow">
+        <div>
+          <h3 class="identity-modal-title" id="monitoringDetailTitle">Quiz</h3>
+          <p class="screen-sub" id="monitoringDetailSub"></p>
+        </div>
+        <button type="button" class="btn btn-icon" id="btnMonitoringDetailClose" aria-label="Close" title="Close">✕</button>
+      </div>
+      <div id="monitoringDetailList"></div>
     </div>
   </div>
 

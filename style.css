@@ -616,6 +616,90 @@ textarea.text-input { resize: vertical; font-family: inherit; }
   gap: var(--space-2);
 }
 
+/* Student Identity modal -- same tokens/pattern as .legibility-modal above
+   (theme-correct, no hardcoded colors), just taller/scrollable to fit the
+   full field list. */
+.identity-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: var(--space-4);
+}
+.identity-modal-content {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-5);
+  max-width: 420px;
+  width: 100%;
+  max-height: calc(100vh - var(--space-8));
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.identity-modal-headrow { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+.identity-modal-title { font-size: 1.1rem; font-weight: 700; }
+.identity-photo-row { display: flex; align-items: center; gap: var(--space-4); }
+.identity-photo-preview {
+  width: 72px; height: 72px; border-radius: 50%; flex-shrink: 0; overflow: hidden;
+  background: var(--color-primary-tint); color: var(--color-primary);
+  display: flex; align-items: center; justify-content: center;
+}
+.identity-photo-preview img { width: 100%; height: 100%; object-fit: cover; }
+.identity-photo-actions { display: flex; flex-direction: column; gap: var(--space-2); flex: 1; }
+.identity-photo-actions .btn { padding: 10px 16px; font-size: 0.85rem; }
+.identity-field-grid { display: flex; flex-direction: column; gap: var(--space-3); }
+.identity-modal-error { font-size: 0.85rem; color: var(--color-danger); }
+
+/* Monitoring tab -- list uses the same card rhythm as .library-list/.exam-card,
+   the detail modal reuses .identity-modal's positioning/sizing rules exactly. */
+.monitoring-list { display: flex; flex-direction: column; gap: var(--space-4); }
+.monitoring-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-card); padding: var(--space-4) var(--space-5); display: flex; flex-direction: column; gap: var(--space-2); align-items: flex-start; }
+.monitoring-detail-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: var(--space-4);
+}
+.monitoring-detail-modal-content {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-5);
+  max-width: 420px;
+  width: 100%;
+  max-height: calc(100vh - var(--space-8));
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.monitoring-attempt-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--color-border); }
+.monitoring-attempt-row:last-child { border-bottom: none; }
+.monitoring-attempt-score { font-size: 1.05rem; font-weight: 700; color: var(--color-primary); flex-shrink: 0; }
+
+.identity-summary-row { display: flex; align-items: center; gap: var(--space-3); margin-top: 10px; }
+.identity-summary-avatar {
+  width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0; overflow: hidden;
+  background: var(--color-primary-tint); color: var(--color-primary);
+  display: flex; align-items: center; justify-content: center;
+}
+.identity-summary-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.identity-summary-body { flex: 1; min-width: 0; }
+.identity-summary-name { font-weight: 700; font-size: 0.94rem; }
+.identity-summary-meta { font-size: 0.78rem; color: var(--color-text-muted); }
+
 .toggle-switch {
   position: relative;
   display: inline-block;

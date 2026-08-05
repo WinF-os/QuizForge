@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.2.17';
+const APP_VERSION = 'QF_SYS_V.1.2.19';
 
 // Diagnostic only: captures the first uncaught error/rejection anywhere in
 // the app so it can be surfaced in the UI (Profile > Backup & Restore) --
@@ -41,12 +41,17 @@ const state = {
   libraryTab: 'completed',
   librarySearch: '',
   cameraStream: null,
+  cameraMode: 'source', // 'source' (document/page scan) | 'identity' (selfie for Student Identity)
   geminiApiKeys: loadGeminiKeys(),
+  studentIdentity: loadStudentIdentity(),
   activeKeyIndex: 0,
   showCorrectAnswers: false,
   currentLibraryId: null, // library entry (if any) the in-progress quiz was resumed/reviewed from -- lets a re-save update it instead of always inserting a duplicate
   legibilityCheckPending: false, // true while an uploaded/captured image is being checked (or its warning modal is open) -- see checkAddedImagesLegibility()
   quizTimerStartedAt: null, // set the moment the first answer is given -- not persisted across a close/reopen, see startQuizTimerIfNeeded()
+  creatorId: loadCreatorId(), // may be null until the first Share & Track tap -- see ensureCreatorId()
+  activeTrackedQuizId: null, // set while taking a quiz opened via a ?quiz= Share & Track link, so the completion path knows to sync a score back
+  pendingTrackedQuizId: null, // a ?quiz= id seen at load time but not yet loaded, because the mandatory first-launch Identity modal is in the way -- see the init block
 };
 
 const QUESTION_TYPES = [
@@ -92,6 +97,43 @@ function saveLibraryExams() {
   } catch (e) { /* storage unavailable/full -- exams still work in-memory this session */ }
 }
 const LIBRARY_EXAMS = loadLibraryExams();
+
+// Student Identity -- collected on first launch (see the init block near the
+// bottom of this file) and editable afterward from Profile > Student
+// Identity. Same shape/storage pattern as the library above: one flat
+// localStorage key, loaded once, written back on every save.
+function loadStudentIdentity() {
+  try {
+    return JSON.parse(localStorage.getItem('quizforge-student-identity') || 'null');
+  } catch (e) {
+    return null;
+  }
+}
+function saveStudentIdentity(identity) {
+  try {
+    localStorage.setItem('quizforge-student-identity', JSON.stringify(identity));
+  } catch (e) { /* storage unavailable/full -- identity still works in-memory this session */ }
+}
+
+// Creator identity for Share & Track -- there's no login in this app, so a
+// lazily-generated random id (same flat-localStorage pattern as Student
+// Identity above) is what ties a set of shared quizzes to "you" on the
+// Monitoring tab. Generated on first Share & Track tap, not at app load, so
+// someone who never shares anything never gets one.
+function loadCreatorId() {
+  try {
+    return localStorage.getItem('quizforge-creator-id');
+  } catch (e) {
+    return null;
+  }
+}
+function ensureCreatorId() {
+  if (state.creatorId) return state.creatorId;
+  const id = crypto.randomUUID();
+  try { localStorage.setItem('quizforge-creator-id', id); } catch (e) { /* works this session only */ }
+  state.creatorId = id;
+  return id;
+}
 
 /* ============ Helpers ============ */
 
@@ -314,6 +356,7 @@ function switchTab(tab) {
   window.scrollTo(0, 0);
   if (tab === 'home') renderHome();
   if (tab === 'library') renderLibrary();
+  if (tab === 'monitoring') renderMonitoring();
 }
 
 document.querySelectorAll('.bottom-nav-item').forEach((btn) => {
@@ -409,6 +452,7 @@ function renderLibrary() {
           <button type="button" class="link-btn js-edit-exam">Edit</button>
           <button type="button" class="link-btn js-share-exam">Share File</button>
           <button type="button" class="link-btn js-share-link-exam">Share Link</button>
+          <button type="button" class="link-btn js-share-track-exam">Share &amp; Track</button>
         </div>
       </div>
     </article>
@@ -455,11 +499,79 @@ function renderLibrary() {
         btn.textContent = original;
       }
     });
+    card.querySelector('.js-share-track-exam')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const original = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = exam.trackedQuizId ? 'Sharing…' : 'Setting up…';
+      try {
+        await shareQuizAndTrack(exam);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    });
   });
   $('libraryList').querySelectorAll('.js-create-new').forEach((btn) => {
     btn.addEventListener('click', () => switchTab('create'));
   });
 }
+
+/* ============ Monitoring ============ */
+
+// Every render* function elsewhere in this file is synchronous and reads
+// purely local state -- this is the first one that needs a network round
+// trip, so it needs its own loading state. monitoringCache holds the last
+// fetch's result so the detail modal doesn't need a second request.
+let monitoringCache = [];
+
+async function renderMonitoring() {
+  const list = $('monitoringList');
+  if (!state.creatorId) {
+    list.innerHTML = `<p class="empty-note">Nothing shared yet — tap Share &amp; Track on a quiz in your Library.</p>`;
+    return;
+  }
+  list.innerHTML = `<p class="empty-note">Loading…</p>`;
+  try {
+    const data = await callEdgeFunction('get-monitoring-data', { creatorId: state.creatorId });
+    monitoringCache = data.quizzes || [];
+    if (!monitoringCache.length) {
+      list.innerHTML = `<p class="empty-note">Nothing shared yet — tap Share &amp; Track on a quiz in your Library.</p>`;
+      return;
+    }
+    list.innerHTML = monitoringCache.map((q, i) => `
+      <article class="card monitoring-card">
+        <h3 class="exam-card-title">${esc(q.examTitle)}</h3>
+        <p class="exam-card-meta">${esc(q.subject || 'General')} &bull; ${q.attempts.length} recipient${q.attempts.length === 1 ? '' : 's'}</p>
+        <button type="button" class="link-btn js-monitoring-view" data-index="${i}">View Recipients</button>
+      </article>
+    `).join('');
+    list.querySelectorAll('.js-monitoring-view').forEach((btn) => {
+      btn.addEventListener('click', () => openMonitoringDetail(monitoringCache[Number(btn.dataset.index)]));
+    });
+  } catch (e) {
+    list.innerHTML = `<p class="empty-note">Couldn't load Monitoring data: ${esc(e.message || e)}</p>`;
+  }
+}
+
+function openMonitoringDetail(quiz) {
+  $('monitoringDetailTitle').textContent = quiz.examTitle;
+  $('monitoringDetailSub').textContent = `${quiz.attempts.length} recipient${quiz.attempts.length === 1 ? '' : 's'}`;
+  $('monitoringDetailList').innerHTML = quiz.attempts.length
+    ? quiz.attempts.map((a) => {
+        // Same name-assembly pattern as renderStudentIdentityCard, above.
+        const name = [a.recipientGivenName, a.recipientMiddleName, a.recipientSurname].filter(Boolean).join(' ') || 'Unnamed';
+        const meta = [a.recipientGradeLevel, a.recipientSchool].filter(Boolean).join(' • ');
+        return `<div class="monitoring-attempt-row">
+          <div><strong>${esc(name)}</strong>${meta ? `<div class="screen-sub">${esc(meta)}</div>` : ''}</div>
+          <div class="monitoring-attempt-score">${a.scorePercent}%</div>
+        </div>`;
+      }).join('')
+    : `<p class="empty-note">No recipients yet.</p>`;
+  $('monitoringDetailModal').hidden = false;
+}
+
+$('btnMonitoringDetailClose').addEventListener('click', () => { $('monitoringDetailModal').hidden = true; });
 
 /* ============ Create: source step ============ */
 
@@ -566,6 +678,7 @@ function resetCreateFlow() {
   state.essayGrades = {};
   state.quizIndex = 0;
   state.currentLibraryId = null; // starting a genuinely new quiz -- not continuing whatever library entry (if any) was previously being resumed/reviewed
+  state.activeTrackedQuizId = null; // same reasoning -- an unrelated new quiz must never carry a stale tracked-quiz association forward
   $('examTitleInput').value = '';
   $('subjectSelect').value = '';
   $('pastedTextArea').value = '';
@@ -652,15 +765,28 @@ $('btnContinueToConfigure').addEventListener('click', () => {
 
 /* ============ Camera capture ============ */
 
-$('btnCameraCapture').addEventListener('click', openCamera);
+$('btnCameraCapture').addEventListener('click', () => openCamera('source'));
 $('btnCameraClose').addEventListener('click', closeCamera);
 
-async function openCamera() {
+// mode: 'source' (document/page scan, rear camera) or 'identity' (Student
+// Identity selfie, front camera) -- same overlay/video/canvas for both,
+// see the shutter handler below for where the captured frame is routed.
+async function openCamera(mode) {
+  state.cameraMode = mode;
+  const isSelfie = mode === 'identity';
+  $('cameraOverlayTitle').textContent = isSelfie ? 'Take a Selfie' : 'Camera Capture';
+  $('cameraHint').textContent = isSelfie
+    ? 'Center your face in the frame, then tap to capture.'
+    : 'Frame the page so the text is flat and well lit, then tap to capture.';
+  // Mirror only the live preview (the natural "looking in a mirror" feel) --
+  // the canvas below always draws the true, unmirrored frame, which is what
+  // an ID photo should actually look like.
+  $('cameraVideo').style.transform = isSelfie ? 'scaleX(-1)' : 'none';
   $('cameraOverlay').hidden = false;
   $('cameraError').hidden = true;
   $('btnCameraShutter').disabled = true;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: isSelfie ? 'user' : 'environment' }, audio: false });
     state.cameraStream = stream;
     const video = $('cameraVideo');
     video.srcObject = stream;
@@ -668,7 +794,9 @@ async function openCamera() {
     $('btnCameraShutter').disabled = false;
   } catch {
     $('cameraError').hidden = false;
-    $('cameraError').textContent = 'Could not access the camera. Check permissions, or use Upload Document instead.';
+    $('cameraError').textContent = isSelfie
+      ? 'Could not access the camera. Check permissions, or use Upload Photo instead.'
+      : 'Could not access the camera. Check permissions, or use Upload Document instead.';
   }
 }
 
@@ -686,6 +814,11 @@ $('btnCameraShutter').addEventListener('click', () => {
   canvas.height = Math.round(video.videoHeight * scale);
   canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
   const dataUrl = canvas.toDataURL('image/jpeg', SOURCE_IMAGE_QUALITY);
+  if (state.cameraMode === 'identity') {
+    closeCamera();
+    applyIdentityPhoto(dataUrl);
+    return;
+  }
   const capturedImage = { dataUrl, mimeType: 'image/jpeg' };
   state.sourceImages.push(capturedImage);
   closeCamera();
@@ -693,6 +826,122 @@ $('btnCameraShutter').addEventListener('click', () => {
   updateContinueGating();
   checkAddedImagesLegibility([capturedImage]);
 });
+
+/* ============ Student Identity ============ */
+// Collected on first launch (mandatory, no close button -- see the init
+// block near the bottom of this file) and reopened, pre-filled, from
+// Profile > Student Identity for edits (closable). Same modal, same save
+// path both times. Photo comes from either Upload Photo (gallery) or Take
+// Selfie (openCamera('identity') above, front camera) -- both funnel into
+// applyIdentityPhoto() so there's one resize/preview path regardless of
+// source, exactly like state.sourceImages does for document photos.
+
+let identityDraftPhotoDataUrl = null;
+
+function identityPlaceholderAvatarSvg(size) {
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" /></svg>`;
+}
+
+async function applyIdentityPhoto(rawDataUrl) {
+  // Small square-ish avatar -- doesn't need document-scan resolution.
+  identityDraftPhotoDataUrl = await resizeImageDataUrl(rawDataUrl, 480, 0.85);
+  renderIdentityPhotoPreview();
+}
+
+function renderIdentityPhotoPreview() {
+  $('identityPhotoPreview').innerHTML = identityDraftPhotoDataUrl
+    ? `<img src="${identityDraftPhotoDataUrl}" alt="Student photo">`
+    : identityPlaceholderAvatarSvg(30);
+}
+
+function openStudentIdentityModal(mandatory) {
+  const id = state.studentIdentity || {};
+  identityDraftPhotoDataUrl = id.photoDataUrl || null;
+  $('identitySurname').value = id.surname || '';
+  $('identityGivenName').value = id.givenName || '';
+  $('identityMiddleName').value = id.middleName || '';
+  $('identityAge').value = id.age || '';
+  $('identitySchool').value = id.school || '';
+  $('identityGradeLevel').value = id.gradeLevel || '';
+  $('identityAdviser').value = id.adviser || '';
+  $('identityAddress').value = id.address || '';
+  $('identityContactNumber').value = id.contactNumber || '';
+  $('identityEmail').value = id.email || '';
+  $('identityGuardianName').value = id.guardianName || '';
+  renderIdentityPhotoPreview();
+  $('identityModalError').hidden = true;
+  $('identityModalSub').textContent = mandatory
+    ? "Welcome! Tell us who you are so your exams and results are labeled correctly."
+    : 'Update your details below.';
+  $('btnIdentityClose').hidden = mandatory;
+  $('identityModal').hidden = false;
+}
+
+function renderStudentIdentityCard() {
+  const id = state.studentIdentity;
+  const avatar = $('identitySummaryAvatar');
+  const hasName = id && (id.surname || id.givenName);
+  if (hasName) {
+    const fullName = [id.givenName, id.middleName, id.surname].filter(Boolean).join(' ');
+    $('identitySummaryName').textContent = fullName || 'Student';
+    const metaParts = [id.gradeLevel, id.school].filter(Boolean);
+    $('identitySummaryMeta').textContent = metaParts.length ? metaParts.join(' • ') : 'Tap Edit to complete your profile.';
+    avatar.innerHTML = id.photoDataUrl ? `<img src="${id.photoDataUrl}" alt="${esc(fullName)}">` : identityPlaceholderAvatarSvg(22);
+  } else {
+    $('identitySummaryName').textContent = 'Not set up yet';
+    $('identitySummaryMeta').textContent = 'Add your details so your exams are labeled correctly.';
+    avatar.innerHTML = identityPlaceholderAvatarSvg(22);
+  }
+}
+
+$('btnIdentityUploadPhoto').addEventListener('click', () => $('identityPhotoInput').click());
+$('identityPhotoInput').addEventListener('change', async (event) => {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+  applyIdentityPhoto(await fileToDataUrl(file));
+});
+$('btnIdentityTakeSelfie').addEventListener('click', () => openCamera('identity'));
+
+$('btnIdentityClose').addEventListener('click', () => { $('identityModal').hidden = true; });
+
+$('btnIdentitySave').addEventListener('click', () => {
+  const surname = $('identitySurname').value.trim();
+  const givenName = $('identityGivenName').value.trim();
+  if (!surname || !givenName) {
+    $('identityModalError').textContent = 'Surname and Name are required.';
+    $('identityModalError').hidden = false;
+    return;
+  }
+  state.studentIdentity = {
+    surname,
+    givenName,
+    middleName: $('identityMiddleName').value.trim(),
+    age: $('identityAge').value.trim(),
+    school: $('identitySchool').value.trim(),
+    gradeLevel: $('identityGradeLevel').value.trim(),
+    adviser: $('identityAdviser').value.trim(),
+    address: $('identityAddress').value.trim(),
+    contactNumber: $('identityContactNumber').value.trim(),
+    email: $('identityEmail').value.trim(),
+    guardianName: $('identityGuardianName').value.trim(),
+    photoDataUrl: identityDraftPhotoDataUrl || null,
+  };
+  saveStudentIdentity(state.studentIdentity);
+  $('identityModal').hidden = true;
+  renderStudentIdentityCard();
+
+  // A Share & Track deep link was waiting on this mandatory first-launch
+  // identity gate -- now that a real identity exists, load it. No-op for
+  // the ordinary "edit identity from Profile" case, where this is null.
+  if (state.pendingTrackedQuizId) {
+    const id = state.pendingTrackedQuizId;
+    state.pendingTrackedQuizId = null;
+    loadTrackedQuizFromDeepLink(id);
+  }
+});
+
+$('btnEditStudentIdentity').addEventListener('click', () => openStudentIdentityModal(false));
 
 /* ============ Image legibility check ============ */
 
@@ -1699,7 +1948,38 @@ async function renderResults(justFinished) {
   if (justFinished && !state.isQuizComplete) {
     state.isQuizComplete = true;
     saveCurrentQuizToLibrary('completed');
+
+    // Best-effort, fire-and-forget: this quiz was opened via a Share & Track
+    // link (?quiz=<id>), so sync the score back for the creator's Monitoring
+    // tab. Deliberately non-blocking and swallows its own errors -- unlike
+    // Share Link, where the network call IS the whole point of the button,
+    // this is a side channel off a results screen that already succeeded
+    // locally and must never be interrupted by a flaky connection.
+    if (state.activeTrackedQuizId) {
+      const scorePercent = computeQuizScorePercent(state.quiz, state.answers, state.essayGrades);
+      submitTrackedQuizAttempt(state.activeTrackedQuizId, scorePercent).catch((e) => {
+        console.error('Share & Track sync failed:', e);
+      });
+    }
   }
+}
+
+function submitTrackedQuizAttempt(trackedQuizId, scorePercent) {
+  const id = state.studentIdentity || {};
+  return callEdgeFunction('submit-quiz-attempt', {
+    trackedQuizId,
+    scorePercent,
+    identity: {
+      surname: id.surname || '',
+      givenName: id.givenName || '',
+      middleName: id.middleName || '',
+      school: id.school || '',
+      gradeLevel: id.gradeLevel || '',
+      adviser: id.adviser || '',
+      contactNumber: id.contactNumber || '',
+      email: id.email || '',
+    },
+  });
 }
 
 $('btnCreateAnother').addEventListener('click', resetCreateFlow);
@@ -1711,6 +1991,25 @@ refreshGeminiKeyStatus();
 renderHome();
 resetCreateFlow();
 document.querySelector('.app-header-version').textContent = APP_VERSION;
+renderStudentIdentityCard();
+
+// Share & Track deep link -- ?quiz=<trackedQuizId>. Parsed before the
+// identity gate below so the intent survives even on a genuine first
+// launch; loading is deferred until AFTER the identity modal closes (see
+// the tail of the btnIdentitySave handler above) since a submitted attempt
+// needs a real identity to attach to, and the modal is non-dismissable on
+// first launch.
+const deepLinkQuizId = new URLSearchParams(location.search).get('quiz');
+state.pendingTrackedQuizId = deepLinkQuizId || null;
+if (deepLinkQuizId) history.replaceState(null, '', location.pathname); // don't re-trigger this on a later reload
+
+if (!state.studentIdentity) {
+  openStudentIdentityModal(true);
+} else if (state.pendingTrackedQuizId) {
+  const id = state.pendingTrackedQuizId;
+  state.pendingTrackedQuizId = null;
+  loadTrackedQuizFromDeepLink(id);
+}
 
 // Was two separate, near-duplicate functions (saveQuizToLibrary,
 // saveAsDraft) that each built their own newExam object -- consolidated
@@ -1762,6 +2061,12 @@ function saveCurrentQuizToLibrary(status) {
     essayGrades: { ...state.essayGrades },
     quizIndex: state.quizIndex,
     history,
+    // newExam is rebuilt from scratch every save (not spread from existing),
+    // so anything not explicitly carried forward here is silently dropped on
+    // the next save/edit -- these two must be, or Share & Track's
+    // association and a resumed attempt's sync-back would both quietly break.
+    trackedQuizId: existing?.trackedQuizId || null, // set by shareQuizAndTrack when THIS exam is the one being shared (creator side)
+    trackedSourceQuizId: state.activeTrackedQuizId || existing?.trackedSourceQuizId || null, // set when this exam was opened via a ?quiz= link (recipient side)
   };
 
   if (existing) {
@@ -1786,6 +2091,7 @@ function saveGeneratedQuizAndReturnToLibrary() {
   state.quizIndex = 0;
   state.isQuizComplete = false;
   state.currentLibraryId = null; // definitely a brand new quiz, not continuing an existing library entry
+  state.activeTrackedQuizId = null; // same -- a freshly generated quiz was never opened via a tracked link
   saveCurrentQuizToLibrary('draft');
   state.libraryTab = 'draft';
   switchTab('library');
@@ -2155,6 +2461,37 @@ $('btnEditQuizFromResults').addEventListener('click', () => {
   if (item) editQuizFromLibrary(item);
 });
 
+// Loads a quiz opened via a Share & Track link (?quiz=<id>, see the Init
+// block). Modeled on continueQuizFromLibrary below, but the quiz data comes
+// from the tracked_quizzes table via get-tracked-quiz instead of the local
+// Library, and it's a brand new attempt (no saved answers/position to
+// restore) -- state.activeTrackedQuizId is what makes the completion path
+// (renderResults) sync the finished score back.
+async function loadTrackedQuizFromDeepLink(trackedQuizId) {
+  switchTab('create');
+  showCreateStep('generating'); // reuses the existing spinner screen as a loading state
+  $('generatingErrorCard').hidden = true;
+  $('generatingSpinner').hidden = false;
+  try {
+    const data = await callEdgeFunction('get-tracked-quiz', { id: trackedQuizId });
+    state.quiz = { questions: data.quizData.questions || [] };
+    state.subject = data.subject || 'General';
+    state.examTitle = data.examTitle || 'Shared Quiz';
+    state.answers = {};
+    state.essayGrades = {};
+    state.quizIndex = 0;
+    state.isQuizComplete = false;
+    state.quizTimerStartedAt = null;
+    state.currentLibraryId = null;
+    state.activeTrackedQuizId = trackedQuizId;
+    showCreateStep('quiz');
+    renderQuizQuestion();
+  } catch (e) {
+    alert(`Couldn't load this shared quiz: ${e.message || e}. The link may have been removed.`);
+    switchTab('home');
+  }
+}
+
 // Continue a draft exactly where it was left -- restores the saved
 // answers/position instead of resetting them. (Originally this called a
 // `renderQuiz()` that didn't exist anywhere in the file and reset all
@@ -2177,6 +2514,7 @@ function continueQuizFromLibrary(item) {
   state.isQuizComplete = false;
   state.quizTimerStartedAt = null; // fresh countdown for this session, see comment on that field
   state.currentLibraryId = item.id || null; // lets a later auto-save update this same entry instead of inserting a duplicate
+  state.activeTrackedQuizId = item.trackedSourceQuizId || null; // restore so finishing a resumed tracked quiz still syncs its score
 
   switchTab('create');
   showCreateStep('quiz');
@@ -2201,6 +2539,7 @@ function retakeQuizFromLibrary(item) {
   state.isQuizComplete = false;
   state.quizTimerStartedAt = null;
   state.currentLibraryId = item.id || null;
+  state.activeTrackedQuizId = item.trackedSourceQuizId || null; // restore so a retake still syncs its score back if this came from a tracked link
 
   switchTab('create');
   showCreateStep('quiz');
@@ -2590,6 +2929,51 @@ async function shareQuizAsLink(item) {
   }
 }
 
+// A third sharing option, distinct from both Share File and the anonymous
+// Share Link above: this link is tied back to this device's creatorId, and
+// a recipient's score syncs back to it automatically on finishing -- see
+// the Monitoring tab. No expiry (unlike Share Link's 7-day signed URL) --
+// meant to be a durable link a teacher can keep reusing.
+async function shareQuizAndTrack(item) {
+  if (!item || !item.quizData) return;
+  const creatorId = ensureCreatorId();
+  const title = item.examTitle || item.title || 'Quiz';
+
+  // Reuse the same tracked row on repeat taps (persisted onto the Library
+  // entry) instead of minting a new disconnected row every time -- otherwise
+  // re-sharing an exam would fragment its recipients across multiple
+  // unrelated Monitoring entries.
+  if (!item.trackedQuizId) {
+    try {
+      const data = await callEdgeFunction('create-tracked-quiz', {
+        creatorId, examTitle: title, subject: item.subject, quizData: item.quizData,
+      });
+      item.trackedQuizId = data.id;
+      saveLibraryExams();
+    } catch (e) {
+      alert(`Couldn't set up tracking for this quiz: ${e.message || e}`);
+      return;
+    }
+  }
+
+  const url = `${location.origin}${location.pathname}?quiz=${item.trackedQuizId}`;
+  const text = `${title} — take this sQUIZit exam. Your score will be shared with the creator.`;
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, text, url });
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') return; // user backed out of the share sheet -- not a failure
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    alert(`Tracked link copied to clipboard:\n${url}`);
+  } catch (e) {
+    alert(`Tracked share link:\n${url}`);
+  }
+}
+
 // Open a completed exam read-only, reusing the same results renderer a
 // live "Finish exam" uses -- restores the saved answers/grades instead of
 // the live in-progress state.
@@ -2628,6 +3012,7 @@ function buildBackupPayload() {
     version: APP_VERSION,
     exportedAt: new Date().toISOString(),
     library: LIBRARY_EXAMS,
+    studentIdentity: state.studentIdentity || null,
   };
 }
 
@@ -2636,6 +3021,11 @@ function applyBackupPayload(payload) {
   LIBRARY_EXAMS.length = 0;
   LIBRARY_EXAMS.push(...payload.library);
   saveLibraryExams();
+  if (payload.studentIdentity) {
+    state.studentIdentity = payload.studentIdentity;
+    saveStudentIdentity(state.studentIdentity);
+    renderStudentIdentityCard();
+  }
   renderLibrary();
   renderHome();
 }
