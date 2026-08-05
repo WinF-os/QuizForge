@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.2.19';
+const APP_VERSION = 'QF_SYS_V.1.2.20';
 
 // Diagnostic only: captures the first uncaught error/rejection anywhere in
 // the app so it can be surfaced in the UI (Profile > Backup & Restore) --
@@ -2148,6 +2148,8 @@ function setupAutoSave() {
 // actual Android install flow. Confirm on-device before relying on it.
 let latestKnownVersion = null;
 let latestApkDownloadUrl = null;
+let swRegistration = null;
+let swReloadedOnce = false;
 
 function isNativeApp() {
   return typeof window.Capacitor !== 'undefined' && !!window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
@@ -2221,18 +2223,71 @@ async function checkForUpdateNative() {
   }
 }
 
-async function checkForUpdate() {
-  if (isNativeApp()) return checkForUpdateNative();
+// Purely for display -- fetches the live app.js just to read its
+// APP_VERSION string. Does NOT decide whether an update exists; that's the
+// service worker registration's own job now (checkForUpdateWeb below), same
+// division of labor as Winfinity's fetchLatestVersionLabel.
+async function fetchLatestVersionLabel() {
   try {
     const res = await fetch('https://winf-os.github.io/sQUIZit/app.js?nocache=' + Date.now());
     if (!res.ok) return null;
     const text = await res.text();
     const match = text.match(/APP_VERSION\s*=\s*'([^']+)'/);
-    if (match) latestKnownVersion = match[1];
     return match ? match[1] : null;
   } catch (e) {
-    return null; // offline or unreachable -- silently no-op, same as Winfinity's own background check
+    return null;
   }
+}
+
+// Event-driven, mirrors Winfinity's own SW-lifecycle update check: asks the
+// registration itself whether a new worker installed and is sitting in
+// `waiting`, instead of the old approach of fetching+regexing app.js and
+// string-comparing (which never actually asked the service worker anything,
+// and required a separate unregister-everything-and-reload to "apply").
+// Resolves to: null on a genuine check failure (offline/unreachable) --
+// triggers the "could not check" message; APP_VERSION (unchanged) when the
+// check succeeded but nothing new is waiting -- "you're on the latest";
+// or the new version's label when an update really is waiting.
+function checkForUpdateWeb() {
+  if (!swRegistration) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    let settled = false;
+    const cleanup = () => {
+      swRegistration.removeEventListener('updatefound', onUpdateFound);
+      clearTimeout(fallbackTimer);
+    };
+    const finish = async (found) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (!found) { resolve(APP_VERSION); return; }
+      const label = await fetchLatestVersionLabel();
+      latestKnownVersion = label || 'the latest build';
+      resolve(latestKnownVersion);
+    };
+    const fail = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(null);
+    };
+    const onUpdateFound = () => {
+      const installing = swRegistration.installing;
+      if (!installing) return;
+      installing.addEventListener('statechange', () => {
+        if (installing.state === 'installed') finish(!!swRegistration.waiting);
+        else if (installing.state === 'redundant') finish(false);
+      });
+    };
+    swRegistration.addEventListener('updatefound', onUpdateFound);
+    const fallbackTimer = setTimeout(() => finish(!!swRegistration.waiting), 8000);
+    swRegistration.update().catch(fail);
+  });
+}
+
+async function checkForUpdate() {
+  if (isNativeApp()) return checkForUpdateNative();
+  return checkForUpdateWeb();
 }
 
 async function applyUpdate() {
@@ -2243,16 +2298,18 @@ async function applyUpdate() {
     if (latestApkDownloadUrl) window.open(latestApkDownloadUrl, '_blank', 'noopener');
     return;
   }
-  try {
-    if ('serviceWorker' in navigator) {
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map((r) => r.unregister()));
-    }
-    if ('caches' in window) {
-      const keys = await caches.keys();
-      await Promise.all(keys.map((k) => caches.delete(k)));
-    }
-  } finally {
+  // Ask the already-installed waiting worker to take over (sw.js's message
+  // listener calls self.skipWaiting()) instead of the old unregister-
+  // everything-and-delete-every-cache approach -- lets the new worker's own
+  // activate handler do the (now correctly cache:'reload'-fetched) cache
+  // swap, and the controllerchange listener below does the one reload.
+  if (swRegistration && swRegistration.waiting) {
+    swRegistration.waiting.postMessage('SKIP_WAITING');
+    // Safety net in case controllerchange never fires for some reason.
+    setTimeout(() => { if (!swReloadedOnce) location.reload(); }, 4000);
+  } else {
+    // Nothing actually waiting (e.g. called before a check ever ran) --
+    // just reload, same blunt fallback as before.
     location.reload();
   }
 }
@@ -2339,10 +2396,20 @@ async function showVersionPopup() {
   refreshUpdateBadge();
 }
 
-// Background check on load (not just when the popup is opened), same
-// convention as Winfinity's own "check ~5s after load" behavior -- lets
-// auto-update actually apply without the user ever opening the popup.
-setTimeout(() => { checkForUpdate().then((v) => { refreshUpdateBadge(); if (v && v !== currentComparableVersion() && isAutoUpdateEnabled()) applyUpdate(); }); }, 5000);
+// Background check -- same convention as Winfinity's own "check ~5s after
+// load, then every 15 minutes" behavior. Lets auto-update actually apply
+// (when the toggle is on) without the user ever opening the popup, and
+// keeps the Profile badge current across a long-lived tab. Shared by the
+// initial 5s timeout below and the periodic interval set up once the
+// service worker registration resolves (see the registration block further
+// down this file).
+function backgroundCheckForUpdate() {
+  return checkForUpdate().then((v) => {
+    refreshUpdateBadge();
+    if (v && v !== currentComparableVersion() && isAutoUpdateEnabled()) applyUpdate();
+  });
+}
+setTimeout(backgroundCheckForUpdate, 5000);
 
 // Version button -> the real popup (checkForUpdate/applyUpdate above),
 // replacing the old placeholder alert entirely. initTheme/renderHome/etc.
@@ -2436,9 +2503,29 @@ setupAutoSave();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(error => {
+    // updateViaCache: 'none' stops the browser from ever serving sw.js
+    // itself from HTTP cache during an update check -- without this, a
+    // stale cached copy of sw.js can make every check falsely report
+    // "already latest" until that HTTP cache entry happens to expire.
+    // Relative path 'sw.js', not '/sw.js' -- this app is served from a
+    // subpath (winf-os.github.io/sQUIZit/), and an absolute /sw.js resolves
+    // to the ORG's root instead, which 404s -- meaning the service worker
+    // never actually registered on the live web deploy at all. Found while
+    // porting Winfinity's SW-lifecycle update mechanism, which depends on a
+    // genuinely-registered registration object to have anything to check.
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
+      swRegistration = reg;
+      setInterval(backgroundCheckForUpdate, 15 * 60 * 1000);
+    }).catch((error) => {
       console.error('Service worker registration failed:', error);
     });
+  });
+  // Fires once the new worker actually takes control (after SKIP_WAITING,
+  // see applyUpdate above) -- the one-and-only reload the update flow needs.
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (swReloadedOnce) return;
+    swReloadedOnce = true;
+    location.reload();
   });
 }
 
