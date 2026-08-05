@@ -472,6 +472,16 @@
       <div class="monitoring-list" id="monitoringList"></div>
     </section>
 
+    <!-- ============ CLASS SESSIONS ============ -->
+    <section class="screen tab-panel" id="tab-class" data-tab="class" hidden>
+      <div>
+        <h2 class="screen-title">Class</h2>
+        <p class="screen-sub">Start a live video class, or reopen one you started before.</p>
+      </div>
+      <button type="button" class="btn btn--primary btn--block" id="btnStartClass" style="margin-bottom: var(--space-4);">Start a Class</button>
+      <div class="class-session-list" id="classSessionList"></div>
+    </section>
+
   </main>
 
   <nav class="bottom-nav" id="bottomNav">
@@ -495,6 +505,10 @@
       <span class="bottom-nav-icon"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg></span>
       <span class="bottom-nav-label">Monitoring</span>
     </button>
+    <button type="button" class="bottom-nav-item" data-target="class">
+      <span class="bottom-nav-icon"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="m21 8-6 4 6 4V8Z"/></svg></span>
+      <span class="bottom-nav-label">Class</span>
+    </button>
   </nav>
 
   <div class="camera-overlay" id="cameraOverlay" hidden>
@@ -511,6 +525,19 @@
       <button type="button" class="camera-shutter-btn" id="btnCameraShutter" aria-label="Take photo" disabled></button>
       <p class="camera-hint" id="cameraHint">Frame the page so the text is flat and well lit, then tap to capture.</p>
     </div>
+  </div>
+
+  <!-- Full-screen live video call view -- Jitsi Meet's IFrame API mounts
+       into #classCallMount (see openClassCall()/closeClassCall() in
+       app.js). Reuses the camera overlay's full-screen black-takeover
+       classes directly; only the mount container is new. -->
+  <div class="camera-overlay class-call-overlay" id="classCallOverlay" hidden>
+    <div class="camera-overlay-head">
+      <button type="button" class="camera-close-btn" id="btnClassCallClose" aria-label="Leave class">✕</button>
+      <span id="classCallTitle">Class</span>
+      <span style="width:32px;"></span>
+    </div>
+    <div class="camera-viewport class-call-mount" id="classCallMount"></div>
   </div>
 
   <!-- Shown while a just-added source image is being checked for legibility,
@@ -602,6 +629,32 @@
       <p class="identity-modal-error" id="identityModalError" hidden></p>
 
       <button type="button" class="btn btn--primary btn--block" id="btnIdentitySave" style="margin-top:4px;">Save</button>
+    </div>
+  </div>
+
+  <!-- Opened from the Class tab's "Start a Class" button -- see the
+       btnStartClass/btnCreateClassSubmit handlers in app.js. Same
+       headrow/close-button structure as the Identity modal above. -->
+  <div class="identity-modal" id="createClassModal" hidden>
+    <div class="identity-modal-content">
+      <div class="identity-modal-headrow">
+        <div>
+          <h3 class="identity-modal-title">Start a Class</h3>
+          <p class="screen-sub">Give it a title so you (and your students) recognize it later.</p>
+        </div>
+        <button type="button" class="btn btn-icon" id="btnCreateClassClose" aria-label="Close" title="Close">✕</button>
+      </div>
+      <label class="field-block">
+        <span class="field-label">Title</span>
+        <input type="text" class="text-input" id="createClassTitle" placeholder="e.g. Grade 10 Science - Typhoon Makeup Class">
+      </label>
+      <label class="field-block">
+        <span class="field-label">Subject (optional)</span>
+        <input type="text" class="text-input" id="createClassSubject" placeholder="e.g. Science">
+      </label>
+      <p class="screen-sub">Tip: screen sharing works when you join from a laptop/desktop browser. Mobile browsers don't support it — join from a computer if you plan to share your screen.</p>
+      <p class="identity-modal-error" id="createClassModalError" hidden></p>
+      <button type="button" class="btn btn--primary btn--block" id="btnCreateClassSubmit" style="margin-top:4px;">Start</button>
     </div>
   </div>
 

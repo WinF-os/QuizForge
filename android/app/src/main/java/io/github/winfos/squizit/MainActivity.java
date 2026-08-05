@@ -5,10 +5,14 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.JavascriptInterface;
 import com.getcapacitor.BridgeActivity;
+import org.jitsi.meet.sdk.JitsiMeetActivity;
+import org.jitsi.meet.sdk.JitsiMeetConferenceOptions;
+import org.jitsi.meet.sdk.JitsiMeetUserInfo;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.net.URL;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -150,6 +154,36 @@ public class MainActivity extends BridgeActivity {
       String json = pendingSharedQuizJson;
       pendingSharedQuizJson = null;
       return json;
+    }
+
+    // Class Sessions' native-Android video call path (see openClassCall()'s
+    // isNativeApp() branch in app.js) -- real screen sharing needs Android's
+    // actual MediaProjection API, which no mobile WebView/browser exposes to
+    // web content, so this opens Jitsi's own real call Activity instead of
+    // the browser IFrame embed used everywhere else. JitsiMeetActivity
+    // manages the MediaProjection permission prompt and foreground service
+    // itself; nothing else in this app needs to handle that.
+    @JavascriptInterface
+    public void launchJitsiCall(String roomName, String displayName) {
+      // @JavascriptInterface methods run on the WebView's JS-bridge thread,
+      // not the UI thread -- launching an Activity requires the UI thread,
+      // same reasoning as minimizeApp() above.
+      runOnUiThread(() -> {
+        try {
+          JitsiMeetUserInfo userInfo = new JitsiMeetUserInfo();
+          userInfo.setDisplayName(displayName);
+          JitsiMeetConferenceOptions options = new JitsiMeetConferenceOptions.Builder()
+              .setServerURL(new URL("https://meet.jit.si"))
+              .setRoom(roomName)
+              .setUserInfo(userInfo)
+              .setFeatureFlag("prejoinpage.enabled", true)
+              .build();
+          JitsiMeetActivity.launch(MainActivity.this, options);
+        } catch (Exception e) {
+          // Malformed URL etc. shouldn't happen with a hardcoded server URL
+          // -- fail quietly rather than crash the WebView bridge call.
+        }
+      });
     }
   }
 }

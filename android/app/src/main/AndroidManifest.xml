@@ -84,4 +84,12 @@
          app even gets a chance to prompt the user, if this isn't declared. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- Same reasoning as CAMERA above: Class Sessions' live video calls
+         (Jitsi, embedded via getUserMedia() in the WebView) need this
+         declared before Capacitor's BridgeWebChromeClient.onPermissionRequest()
+         is even allowed to prompt for microphone access. Only takes effect
+         on a rebuilt, reinstalled APK; existing installs keep working for
+         everything except class-session audio until reinstalled. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 </manifest>

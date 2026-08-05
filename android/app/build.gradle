@@ -13,9 +13,9 @@ android {
         // it -- this was hardcoded to 1 across every build this session,
         // which is the actual reason "uninstall first" kept being necessary.
         // Convention: major*10000 + minor*100 + patch, mirrors APP_VERSION
-        // in app.js (currently 'QF_SYS_V.1.2.17') -- bump both together.
-        versionCode 10217
-        versionName "1.2.17"
+        // in app.js (currently 'QF_SYS_V.1.2.21') -- bump both together.
+        versionCode 10221
+        versionName "1.2.21"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -47,6 +47,12 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+
+    // Class Sessions' native video call screen -- real screen sharing via
+    // Android's MediaProjection, launched from MainActivity's AndroidBridge
+    // (see launchJitsiCall). Pin an explicit version rather than '+' per
+    // Jitsi's own guidance; re-check the releases listing before bumping.
+    implementation('org.jitsi.react:jitsi-meet-sdk:13.1.0') { transitive = true }
 }
 
 apply from: 'capacitor.build.gradle'

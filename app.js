@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.2.20';
+const APP_VERSION = 'QF_SYS_V.1.2.21';
 
 // Diagnostic only: captures the first uncaught error/rejection anywhere in
 // the app so it can be surfaced in the UI (Profile > Backup & Restore) --
@@ -52,6 +52,7 @@ const state = {
   creatorId: loadCreatorId(), // may be null until the first Share & Track tap -- see ensureCreatorId()
   activeTrackedQuizId: null, // set while taking a quiz opened via a ?quiz= Share & Track link, so the completion path knows to sync a score back
   pendingTrackedQuizId: null, // a ?quiz= id seen at load time but not yet loaded, because the mandatory first-launch Identity modal is in the way -- see the init block
+  pendingClassSessionId: null, // same idea as pendingTrackedQuizId, but for a ?class= Class Sessions link
 };
 
 const QUESTION_TYPES = [
@@ -357,6 +358,7 @@ function switchTab(tab) {
   if (tab === 'home') renderHome();
   if (tab === 'library') renderLibrary();
   if (tab === 'monitoring') renderMonitoring();
+  if (tab === 'class') renderClassTab();
 }
 
 document.querySelectorAll('.bottom-nav-item').forEach((btn) => {
@@ -572,6 +574,201 @@ function openMonitoringDetail(quiz) {
 }
 
 $('btnMonitoringDetailClose').addEventListener('click', () => { $('monitoringDetailModal').hidden = true; });
+
+/* ============ Class Sessions ============ */
+
+// Live group video calls for when in-person class is suspended (typhoons,
+// etc). Video/audio is powered by Jitsi Meet's free public server
+// (meet.jit.si) -- no account needed, no time limit, embedded via its
+// IFrame API. sQUIZit itself never runs a media server; a "class session"
+// is just a durable row (title + a namespaced room name) that a shareable
+// ?class=<id> link points at, same architecture as Share & Track's
+// tracked_quizzes. state.creatorId/ensureCreatorId() (already built for
+// Share & Track) is reused as-is for "whose classes are these."
+
+let myClassesCache = []; // last get-my-classes fetch, so the list doesn't refetch on every interaction
+let activeJitsiApi = null; // the live JitsiMeetExternalAPI instance, or null when no call is open
+
+// Loaded lazily on first actual use, not in index.html's <head> -- most app
+// visits never touch the Class tab, so there's no reason to make every cold
+// start pull in a third-party script it won't use.
+let jitsiScriptPromise = null;
+function loadJitsiScript() {
+  if (window.JitsiMeetExternalAPI) return Promise.resolve();
+  if (jitsiScriptPromise) return jitsiScriptPromise;
+  jitsiScriptPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://meet.jit.si/external_api.js';
+    script.onload = () => resolve();
+    script.onerror = () => {
+      jitsiScriptPromise = null; // let a later retry actually retry, instead of resolving to a permanently-broken cached failure
+      reject(new Error('Could not reach the video call service. Check your connection.'));
+    };
+    document.head.appendChild(script);
+  });
+  return jitsiScriptPromise;
+}
+
+async function renderClassTab() {
+  const list = $('classSessionList');
+  if (!state.creatorId) {
+    list.innerHTML = `<p class="empty-note">No classes yet — tap Start a Class to begin.</p>`;
+    return;
+  }
+  list.innerHTML = `<p class="empty-note">Loading…</p>`;
+  try {
+    const data = await callEdgeFunction('get-my-classes', { creatorId: state.creatorId });
+    myClassesCache = data.sessions || [];
+    if (!myClassesCache.length) {
+      list.innerHTML = `<p class="empty-note">No classes yet — tap Start a Class to begin.</p>`;
+      return;
+    }
+    list.innerHTML = myClassesCache.map((s, i) => `
+      <article class="card class-session-card">
+        <h3 class="exam-card-title">${esc(s.title)}</h3>
+        <p class="exam-card-meta">${esc(s.subject || 'General')}</p>
+        <div class="exam-card-actions">
+          <button type="button" class="link-btn js-class-join" data-index="${i}">Join / Resume</button>
+          <button type="button" class="link-btn js-class-share" data-index="${i}">Copy Link</button>
+        </div>
+      </article>
+    `).join('');
+    list.querySelectorAll('.js-class-join').forEach((btn) => {
+      btn.addEventListener('click', () => openClassCall(myClassesCache[Number(btn.dataset.index)]));
+    });
+    list.querySelectorAll('.js-class-share').forEach((btn) => {
+      btn.addEventListener('click', () => shareClassSessionLink(myClassesCache[Number(btn.dataset.index)]));
+    });
+  } catch (e) {
+    list.innerHTML = `<p class="empty-note">Couldn't load your classes: ${esc(e.message || e)}</p>`;
+  }
+}
+
+// Durable, reusable link (no expiry, unlike Share Link's 7-day TTL) -- the
+// same session gets shared across every day of a multi-day class
+// suspension, same reasoning as Share & Track's links.
+async function shareClassSessionLink(session) {
+  if (!session || !session.id) return;
+  const title = session.title || 'Class';
+  const url = `${location.origin}${location.pathname}?class=${session.id}`;
+  const text = `${title} — join this live class on sQUIZit.`;
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, text, url });
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') return; // user backed out of the share sheet -- not a failure
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    alert(`Class link copied to clipboard:\n${url}`);
+  } catch (e) {
+    alert(`Class link:\n${url}`);
+  }
+}
+
+// session needs { title, roomName } -- either a fresh row from
+// create-class-session, a cached entry from myClassesCache, or the response
+// of get-class-session (deep-link join path, see loadClassSessionFromDeepLink
+// below). Jitsi's own "prejoin page" (configOverwrite.prejoinPageEnabled)
+// handles the camera/mic preview + display-name-confirm step, so there's no
+// separate custom "about to join" screen to build here.
+async function openClassCall(session) {
+  const identity = state.studentIdentity || {};
+  const displayName = [identity.givenName, identity.surname].filter(Boolean).join(' ') || 'sQUIZit User';
+
+  // Native Android gets Jitsi's real SDK (via MainActivity's AndroidBridge,
+  // see launchJitsiCall) instead of the browser IFrame embed below --
+  // screen sharing needs Android's actual MediaProjection API, which no
+  // mobile WebView/browser exposes to web content. Everything else (web,
+  // PWA, iOS-web) keeps using the IFrame path unchanged.
+  if (isNativeApp() && window.AndroidBridge && window.AndroidBridge.launchJitsiCall) {
+    window.AndroidBridge.launchJitsiCall(session.roomName, displayName);
+    return;
+  }
+
+  $('classCallTitle').textContent = session.title || 'Class';
+  $('classCallOverlay').hidden = false;
+  $('classCallMount').innerHTML = '';
+  try {
+    await loadJitsiScript();
+    activeJitsiApi = new JitsiMeetExternalAPI('meet.jit.si', {
+      roomName: session.roomName,
+      parentNode: $('classCallMount'),
+      width: '100%',
+      height: '100%',
+      userInfo: { displayName },
+      configOverwrite: { prejoinPageEnabled: true },
+    });
+    // Fires from Jitsi's own in-call "leave" control -- same cleanup path as
+    // the header close button below, so there's exactly one dispose route
+    // no matter which way the user leaves.
+    activeJitsiApi.addListener('readyToClose', closeClassCall);
+  } catch (e) {
+    closeClassCall();
+    alert(e.message || 'Could not start the video call.');
+  }
+}
+
+function closeClassCall() {
+  if (activeJitsiApi) {
+    activeJitsiApi.dispose();
+    activeJitsiApi = null;
+  }
+  $('classCallOverlay').hidden = true;
+  $('classCallMount').innerHTML = '';
+}
+
+$('btnClassCallClose').addEventListener('click', closeClassCall);
+
+$('btnStartClass').addEventListener('click', () => {
+  $('createClassTitle').value = '';
+  $('createClassSubject').value = '';
+  $('createClassModalError').hidden = true;
+  $('createClassModal').hidden = false;
+});
+$('btnCreateClassClose').addEventListener('click', () => { $('createClassModal').hidden = true; });
+$('btnCreateClassSubmit').addEventListener('click', async () => {
+  const title = $('createClassTitle').value.trim();
+  if (!title) {
+    $('createClassModalError').textContent = 'Give this class a title.';
+    $('createClassModalError').hidden = false;
+    return;
+  }
+  const creatorId = ensureCreatorId();
+  const subject = $('createClassSubject').value.trim() || null;
+  const btn = $('btnCreateClassSubmit');
+  btn.disabled = true;
+  btn.textContent = 'Starting…';
+  try {
+    const data = await callEdgeFunction('create-class-session', { creatorId, title, subject });
+    $('createClassModal').hidden = true;
+    const session = { id: data.id, title, subject, roomName: data.roomName, createdAt: new Date().toISOString() };
+    myClassesCache.unshift(session);
+    renderClassTab();
+    openClassCall(session);
+  } catch (e) {
+    $('createClassModalError').textContent = e.message || 'Could not start this class.';
+    $('createClassModalError').hidden = false;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Start';
+  }
+});
+
+// Resolves a ?class=<id> deep link -- mirrors loadTrackedQuizFromDeepLink's
+// role for ?quiz=, but simpler: no quiz content to load, just enough
+// metadata (title/roomName) to open the call directly.
+async function loadClassSessionFromDeepLink(id) {
+  switchTab('class');
+  try {
+    const data = await callEdgeFunction('get-class-session', { id });
+    openClassCall({ title: data.title, subject: data.subject, roomName: data.roomName });
+  } catch (e) {
+    alert(`Couldn't join this class: ${e.message || e}. The link may no longer be active.`);
+  }
+}
 
 /* ============ Create: source step ============ */
 
@@ -938,6 +1135,10 @@ $('btnIdentitySave').addEventListener('click', () => {
     const id = state.pendingTrackedQuizId;
     state.pendingTrackedQuizId = null;
     loadTrackedQuizFromDeepLink(id);
+  } else if (state.pendingClassSessionId) {
+    const id = state.pendingClassSessionId;
+    state.pendingClassSessionId = null;
+    loadClassSessionFromDeepLink(id);
   }
 });
 
@@ -2003,12 +2204,21 @@ const deepLinkQuizId = new URLSearchParams(location.search).get('quiz');
 state.pendingTrackedQuizId = deepLinkQuizId || null;
 if (deepLinkQuizId) history.replaceState(null, '', location.pathname); // don't re-trigger this on a later reload
 
+// Same deal for a Class Sessions join link -- ?class=<sessionId>.
+const deepLinkClassId = new URLSearchParams(location.search).get('class');
+state.pendingClassSessionId = deepLinkClassId || null;
+if (deepLinkClassId) history.replaceState(null, '', location.pathname);
+
 if (!state.studentIdentity) {
   openStudentIdentityModal(true);
 } else if (state.pendingTrackedQuizId) {
   const id = state.pendingTrackedQuizId;
   state.pendingTrackedQuizId = null;
   loadTrackedQuizFromDeepLink(id);
+} else if (state.pendingClassSessionId) {
+  const id = state.pendingClassSessionId;
+  state.pendingClassSessionId = null;
+  loadClassSessionFromDeepLink(id);
 }
 
 // Was two separate, near-duplicate functions (saveQuizToLibrary,

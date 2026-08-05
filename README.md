@@ -40,6 +40,9 @@ supabase functions deploy create-tracked-quiz
 supabase functions deploy get-tracked-quiz
 supabase functions deploy submit-quiz-attempt
 supabase functions deploy get-monitoring-data
+supabase functions deploy create-class-session
+supabase functions deploy get-class-session
+supabase functions deploy get-my-classes
 ```
 
 (In practice this project's functions have been deployed by pasting each one's `index.ts` directly into the Supabase dashboard's Edge Functions UI rather than via CLI — both work, but the dashboard's single-file editor can't resolve a relative import to `_shared/`, which is why `check-image-legibility` and `share-quiz` inline their own CORS helper instead of importing it like the other two do.)
@@ -85,6 +88,23 @@ alter table public.quiz_attempts enable row level security;
 ```
 
 Deliberately no `create policy` statements — RLS enabled with zero policies means the public anon key can't read/write these tables at all; every access goes through the four functions above using the service-role key, same posture as the `shared-quizzes` Storage bucket. There's no login system in this app (BYOK, no accounts), so "creator identity" is just a random id generated into that browser's `localStorage` the first time Share & Track is used — clearing storage or reinstalling loses the link to past shared quizzes and their Monitoring data.
+
+`create-class-session`/`get-class-session`/`get-my-classes` back the **Class** tab — live group video calls (for when in-person class is suspended, e.g. a typhoon closure), powered by Jitsi Meet's free public server (`meet.jit.si`, embedded via its IFrame API — no account, no server of sQUIZit's own needed for the call itself). These need one more table, same posture as above (zero RLS policies, service-role-only access):
+
+```sql
+create table public.class_sessions (
+  id uuid primary key default gen_random_uuid(),
+  creator_id uuid not null,
+  title text not null,
+  subject text,
+  room_name text not null unique,
+  created_at timestamptz not null default now()
+);
+create index class_sessions_creator_id_idx on public.class_sessions (creator_id);
+alter table public.class_sessions enable row level security;
+```
+
+Reuses the same device-local `creatorId` as Share & Track (same `localStorage` key) — a session's shareable `?class=<id>` link is durable/reusable across multiple days, not a one-shot link. Native Android build note: microphone access for the call needs `RECORD_AUDIO` declared in `AndroidManifest.xml` (already added) and takes effect only on a rebuilt + reinstalled APK.
 
 ### 3. Add your Gemini API key (BYOK)
 
