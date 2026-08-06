@@ -43,6 +43,8 @@ supabase functions deploy get-monitoring-data
 supabase functions deploy create-class-session
 supabase functions deploy get-class-session
 supabase functions deploy get-my-classes
+supabase functions deploy save-digital-id-backup
+supabase functions deploy restore-digital-id-backup
 ```
 
 (In practice this project's functions have been deployed by pasting each one's `index.ts` directly into the Supabase dashboard's Edge Functions UI rather than via CLI — both work, but the dashboard's single-file editor can't resolve a relative import to `_shared/`, which is why `check-image-legibility` and `share-quiz` inline their own CORS helper instead of importing it like the other two do.)
@@ -105,6 +107,23 @@ alter table public.class_sessions enable row level security;
 ```
 
 Reuses the same device-local `creatorId` as Share & Track (same `localStorage` key) — a session's shareable `?class=<id>` link is durable/reusable across multiple days, not a one-shot link. Native Android build note: microphone access for the call needs `RECORD_AUDIO` declared in `AndroidManifest.xml` (already added) and takes effect only on a rebuilt + reinstalled APK.
+
+`save-digital-id-backup`/`restore-digital-id-backup` back **Profile → Backup & Restore → Digital ID** and the mandatory Student Identity modal's "Have a Digital ID? Restore it instead" path — a third backup destination for the exact same payload the local-file/Drive backups already use (`buildBackupPayload()`/`applyBackupPayload()` in app.js), letting a user recover their identity + library on a new device (or after clearing storage) with a short ID + PIN instead of retyping everything. Needs one more table:
+
+```sql
+create table public.digital_identities (
+  digital_id text primary key,
+  pin_hash text not null,
+  payload jsonb not null,
+  failed_attempts integer not null default 0,
+  locked_until timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.digital_identities enable row level security;
+```
+
+Same zero-RLS-policy posture as every other table here. The PIN is bcrypt-hashed server-side (`npm:bcryptjs`, never stored/logged in plaintext) and never persisted client-side either — it's re-entered every time. 8 failed attempts locks a Digital ID for 15 minutes; every failure mode (wrong ID, wrong PIN, locked out) returns an identical generic error so a failed attempt never leaks which part was wrong. **A lost Digital ID + PIN is permanently unrecoverable** — the server only ever has a bcrypt hash, nothing to recover from; there's no forgot-PIN flow in this version.
 
 ### 3. Add your Gemini API key (BYOK)
 

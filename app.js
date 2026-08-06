@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.2.21';
+const APP_VERSION = 'QF_SYS_V.1.2.23';
 
 // Diagnostic only: captures the first uncaught error/rejection anywhere in
 // the app so it can be surfaced in the UI (Profile > Backup & Restore) --
@@ -53,6 +53,7 @@ const state = {
   activeTrackedQuizId: null, // set while taking a quiz opened via a ?quiz= Share & Track link, so the completion path knows to sync a score back
   pendingTrackedQuizId: null, // a ?quiz= id seen at load time but not yet loaded, because the mandatory first-launch Identity modal is in the way -- see the init block
   pendingClassSessionId: null, // same idea as pendingTrackedQuizId, but for a ?class= Class Sessions link
+  digitalId: loadDigitalId(), // may be null until the first "Back Up via Digital ID" tap -- see Profile > Backup & Restore
 };
 
 const QUESTION_TYPES = [
@@ -134,6 +135,23 @@ function ensureCreatorId() {
   try { localStorage.setItem('quizforge-creator-id', id); } catch (e) { /* works this session only */ }
   state.creatorId = id;
   return id;
+}
+
+// Digital ID -- the id itself only, NEVER the PIN. The PIN is never
+// persisted client-side and must be re-entered every time a backup/restore
+// happens; unlike creatorId, this is never generated client-side either --
+// it always comes back from save-digital-id-backup on first successful
+// backup (server-side generation, since this browser has no way to check
+// for a collision against digital_identities before writing anyway).
+function loadDigitalId() {
+  try {
+    return localStorage.getItem('quizforge-digital-id');
+  } catch (e) {
+    return null;
+  }
+}
+function saveDigitalIdLocally(id) {
+  try { localStorage.setItem('quizforge-digital-id', id); } catch (e) { /* still usable this session */ }
 }
 
 /* ============ Helpers ============ */
@@ -1071,6 +1089,13 @@ function openStudentIdentityModal(mandatory) {
     ? "Welcome! Tell us who you are so your exams and results are labeled correctly."
     : 'Update your details below.';
   $('btnIdentityClose').hidden = mandatory;
+  // Always reset to the manual-entry view on open -- a previous "Restore
+  // via Digital ID" attempt shouldn't leave that form showing next time.
+  $('identityFormBody').hidden = false;
+  $('identityRestoreSection').hidden = true;
+  $('identityRestoreId').value = '';
+  $('identityRestorePin').value = '';
+  $('identityRestoreError').hidden = true;
   $('identityModal').hidden = false;
 }
 
@@ -1127,10 +1152,17 @@ $('btnIdentitySave').addEventListener('click', () => {
   saveStudentIdentity(state.studentIdentity);
   $('identityModal').hidden = true;
   renderStudentIdentityCard();
+  resolvePendingIdentityDeepLink();
+});
 
-  // A Share & Track deep link was waiting on this mandatory first-launch
-  // identity gate -- now that a real identity exists, load it. No-op for
-  // the ordinary "edit identity from Profile" case, where this is null.
+// A Share & Track or Class Sessions deep link was waiting on the mandatory
+// first-launch identity gate -- now that a real identity exists (whether
+// from a manual Save above or a Digital ID restore), load it. No-op for
+// the ordinary "edit identity from Profile" case, where both are null.
+// Factored out so the Digital ID restore path (both inside the identity
+// modal and from Profile) can resume a pending deep link too, not just a
+// manual save.
+function resolvePendingIdentityDeepLink() {
   if (state.pendingTrackedQuizId) {
     const id = state.pendingTrackedQuizId;
     state.pendingTrackedQuizId = null;
@@ -1139,6 +1171,43 @@ $('btnIdentitySave').addEventListener('click', () => {
     const id = state.pendingClassSessionId;
     state.pendingClassSessionId = null;
     loadClassSessionFromDeepLink(id);
+  }
+}
+
+$('btnIdentityShowRestore').addEventListener('click', () => {
+  $('identityFormBody').hidden = true;
+  $('identityRestoreSection').hidden = false;
+});
+$('btnIdentityShowManual').addEventListener('click', () => {
+  $('identityRestoreSection').hidden = true;
+  $('identityFormBody').hidden = false;
+});
+
+$('btnIdentityRestoreSubmit').addEventListener('click', async () => {
+  const digitalId = $('identityRestoreId').value.trim();
+  const pin = $('identityRestorePin').value;
+  if (!digitalId || pin.length < 6) {
+    $('identityRestoreError').textContent = 'Enter your Digital ID and PIN.';
+    $('identityRestoreError').hidden = false;
+    return;
+  }
+  const btn = $('btnIdentityRestoreSubmit');
+  btn.disabled = true;
+  btn.textContent = 'Restoring…';
+  try {
+    const data = await callEdgeFunction('restore-digital-id-backup', { digitalId, pin });
+    applyBackupPayload(data.payload);
+    state.digitalId = digitalId;
+    saveDigitalIdLocally(digitalId);
+    refreshDigitalIdUi();
+    $('identityModal').hidden = true;
+    resolvePendingIdentityDeepLink();
+  } catch (e) {
+    $('identityRestoreError').textContent = e.message || 'Could not restore this backup.';
+    $('identityRestoreError').hidden = false;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Restore My Identity & Library';
   }
 });
 
@@ -2711,7 +2780,24 @@ document.getElementById('btnShareUpdateLink').addEventListener('click', async ()
 
 setupAutoSave();
 
-if ('serviceWorker' in navigator) {
+if (isNativeApp()) {
+  // Native updates work by installing a whole new APK with freshly bundled
+  // assets each time (see applyUpdate's native branch) -- a Service Worker
+  // has no reason to intercept fetches here at all. Found the hard way: a
+  // plain `adb install -r` reinstall does NOT wipe the WebView's own
+  // storage, so a Service Worker (and its cached index.html/app.js) left
+  // over from an older install kept serving its own stale content forever,
+  // completely hiding whatever the newly installed APK actually bundled --
+  // looked exactly like a "half the app didn't update" bug. Actively
+  // unregister/clear here so any pre-existing one self-heals once a device
+  // gets this fix, rather than only registering-but-never-again below.
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister()));
+  }
+  if ('caches' in window) {
+    caches.keys().then((keys) => keys.forEach((k) => caches.delete(k)));
+  }
+} else if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     // updateViaCache: 'none' stops the browser from ever serving sw.js
     // itself from HTTP cache during an update check -- without this, a
@@ -3524,6 +3610,104 @@ async function restoreFromDrive() {
 $('btnRestoreDrive').addEventListener('click', restoreFromDrive);
 
 refreshDriveUi();
+
+/* ---- Digital ID ---- */
+
+// A third backup destination for the exact same buildBackupPayload()/
+// applyBackupPayload() pair used by the local-file and Drive paths above --
+// not a separate identity-only mechanism. Backed by the digital_identities
+// table (PIN-gated, since this bundles real PII) via save-digital-id-backup/
+// restore-digital-id-backup. See also the "Have a Digital ID? Restore it
+// instead" path on the mandatory Student Identity modal, which calls
+// restore-digital-id-backup directly and reuses applyBackupPayload the same
+// way.
+
+function refreshDigitalIdUi() {
+  const id = state.digitalId;
+  $('digitalIdCurrentText').textContent = id ? `Your Digital ID: ${id}` : 'Not set up yet.';
+  $('btnCopyDigitalId').hidden = !id;
+  $('btnDigitalIdBackup').textContent = id ? '🔑 Update Digital ID Backup' : '🔑 Back Up via Digital ID';
+}
+
+$('btnCopyDigitalId').addEventListener('click', async () => {
+  if (!state.digitalId) return;
+  try {
+    await navigator.clipboard.writeText(state.digitalId);
+    alert(`Digital ID copied to clipboard:\n${state.digitalId}`);
+  } catch (e) {
+    alert(`Your Digital ID:\n${state.digitalId}`);
+  }
+});
+
+let digitalIdModalMode = 'backup'; // 'backup' | 'restore'
+
+function openDigitalIdModal(mode) {
+  digitalIdModalMode = mode;
+  $('digitalIdFieldBlock').hidden = mode === 'backup'; // backup never asks for an id -- it's generated (new) or already known locally (update)
+  $('digitalIdModalTitle').textContent = mode === 'backup'
+    ? (state.digitalId ? 'Update Digital ID Backup' : 'Back Up via Digital ID')
+    : 'Restore via Digital ID';
+  $('digitalIdModalSub').textContent = mode === 'backup'
+    ? (state.digitalId ? 'Enter your PIN to update this backup.' : 'Choose a PIN (at least 6 characters). Write it down -- there is no PIN recovery.')
+    : 'Enter the Digital ID and PIN you backed up with.';
+  $('digitalIdInputId').value = '';
+  $('digitalIdInputPin').value = '';
+  $('digitalIdModalError').hidden = true;
+  $('digitalIdModal').hidden = false;
+}
+
+$('btnDigitalIdBackup').addEventListener('click', () => openDigitalIdModal('backup'));
+$('btnDigitalIdRestore').addEventListener('click', () => openDigitalIdModal('restore'));
+$('btnDigitalIdModalClose').addEventListener('click', () => { $('digitalIdModal').hidden = true; });
+
+$('btnDigitalIdModalSubmit').addEventListener('click', async () => {
+  const pin = $('digitalIdInputPin').value;
+  if (pin.length < 6) {
+    $('digitalIdModalError').textContent = 'PIN must be at least 6 characters.';
+    $('digitalIdModalError').hidden = false;
+    return;
+  }
+  const btn = $('btnDigitalIdModalSubmit');
+  btn.disabled = true;
+  btn.textContent = 'Please wait…';
+  try {
+    if (digitalIdModalMode === 'backup') {
+      const data = await callEdgeFunction('save-digital-id-backup', {
+        digitalId: state.digitalId || undefined,
+        pin,
+        payload: buildBackupPayload(),
+      });
+      state.digitalId = data.digitalId;
+      saveDigitalIdLocally(data.digitalId);
+      refreshDigitalIdUi();
+      $('digitalIdModal').hidden = true;
+      $('backupStatusText').textContent = `Backed up to Digital ID ${data.digitalId}.`;
+    } else {
+      const digitalId = $('digitalIdInputId').value.trim();
+      if (!digitalId) {
+        $('digitalIdModalError').textContent = 'Enter your Digital ID.';
+        $('digitalIdModalError').hidden = false;
+        return;
+      }
+      if (!confirm('Restore your identity and library from this Digital ID? This replaces your current library on this device.')) return;
+      const data = await callEdgeFunction('restore-digital-id-backup', { digitalId, pin });
+      applyBackupPayload(data.payload);
+      state.digitalId = digitalId;
+      saveDigitalIdLocally(digitalId);
+      refreshDigitalIdUi();
+      $('digitalIdModal').hidden = true;
+      $('backupStatusText').textContent = `Restored from Digital ID ${digitalId}.`;
+    }
+  } catch (e) {
+    $('digitalIdModalError').textContent = e.message || 'Something went wrong.';
+    $('digitalIdModalError').hidden = false;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Continue';
+  }
+});
+
+refreshDigitalIdUi();
 // The GIS script tag was previously static in index.html -- but a static
 // <script src> only fetches ONCE at page load. In the native app that
 // single fetch was found to fail outright (confirmed via an on-device diag:

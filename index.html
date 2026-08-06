@@ -459,6 +459,18 @@
           <button type="button" class="btn btn--outline" id="btnBackupDrive">Back Up to Drive</button>
           <button type="button" class="btn btn--outline" id="btnRestoreDrive">Restore from Drive</button>
         </div>
+
+        <p class="field-label" style="margin-top:16px;">Digital ID</p>
+        <p class="screen-sub" style="margin-top:4px;">Restore your identity and library on a new device with a short ID and PIN, instead of retyping everything.</p>
+        <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
+          <p class="screen-sub" id="digitalIdCurrentText" style="margin:0;">Not set up yet.</p>
+          <button type="button" class="btn btn-icon" id="btnCopyDigitalId" aria-label="Copy Digital ID" title="Copy" hidden>📋</button>
+        </div>
+        <div class="backup-btn-row">
+          <button type="button" class="btn btn--outline" id="btnDigitalIdBackup">🔑 Back Up via Digital ID</button>
+          <button type="button" class="btn btn--outline" id="btnDigitalIdRestore">Restore via Digital ID</button>
+        </div>
+
         <p class="screen-sub" id="backupStatusText" style="margin-top:8px;"></p>
       </div>
     </section>
@@ -570,6 +582,9 @@
         <button type="button" class="btn btn-icon" id="btnIdentityClose" aria-label="Close" title="Close">✕</button>
       </div>
 
+      <button type="button" class="link-btn" id="btnIdentityShowRestore">Have a Digital ID? Restore it instead</button>
+
+      <div id="identityFormBody">
       <div class="identity-photo-row">
         <div class="identity-photo-preview" id="identityPhotoPreview"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" /></svg></div>
         <div class="identity-photo-actions">
@@ -629,6 +644,21 @@
       <p class="identity-modal-error" id="identityModalError" hidden></p>
 
       <button type="button" class="btn btn--primary btn--block" id="btnIdentitySave" style="margin-top:4px;">Save</button>
+      </div>
+
+      <div id="identityRestoreSection" hidden>
+        <label class="field-block">
+          <span class="field-label">Digital ID</span>
+          <input type="text" class="text-input" id="identityRestoreId" placeholder="e.g. SQ-AB23XZ">
+        </label>
+        <label class="field-block" style="margin-top:10px;">
+          <span class="field-label">PIN</span>
+          <input type="password" class="text-input" id="identityRestorePin" placeholder="Your PIN" inputmode="numeric">
+        </label>
+        <p class="identity-modal-error" id="identityRestoreError" hidden></p>
+        <button type="button" class="btn btn--primary btn--block" id="btnIdentityRestoreSubmit" style="margin-top:4px;">Restore My Identity &amp; Library</button>
+        <button type="button" class="link-btn" id="btnIdentityShowManual" style="margin-top:8px;">Back to manual entry</button>
+      </div>
     </div>
   </div>
 
@@ -655,6 +685,32 @@
       <p class="screen-sub">Tip: screen sharing works when you join from a laptop/desktop browser. Mobile browsers don't support it — join from a computer if you plan to share your screen.</p>
       <p class="identity-modal-error" id="createClassModalError" hidden></p>
       <button type="button" class="btn btn--primary btn--block" id="btnCreateClassSubmit" style="margin-top:4px;">Start</button>
+    </div>
+  </div>
+
+  <!-- Backs both "Back Up via Digital ID" and "Restore via Digital ID" from
+       Profile -- one modal, mode toggled in JS (openDigitalIdModal()),
+       rather than two near-identical modals, since the only real
+       difference is whether the Digital ID field is shown. -->
+  <div class="identity-modal" id="digitalIdModal" hidden>
+    <div class="identity-modal-content" style="max-width:380px;">
+      <div class="identity-modal-headrow">
+        <div>
+          <h3 class="identity-modal-title" id="digitalIdModalTitle">Back Up via Digital ID</h3>
+          <p class="screen-sub" id="digitalIdModalSub">Choose a PIN to protect this backup.</p>
+        </div>
+        <button type="button" class="btn btn-icon" id="btnDigitalIdModalClose" aria-label="Close" title="Close">✕</button>
+      </div>
+      <label class="field-block" id="digitalIdFieldBlock" hidden>
+        <span class="field-label">Digital ID</span>
+        <input type="text" class="text-input" id="digitalIdInputId" placeholder="e.g. SQ-AB23XZ">
+      </label>
+      <label class="field-block" style="margin-top:10px;">
+        <span class="field-label">PIN</span>
+        <input type="password" class="text-input" id="digitalIdInputPin" placeholder="At least 6 characters" inputmode="numeric">
+      </label>
+      <p class="identity-modal-error" id="digitalIdModalError" hidden></p>
+      <button type="button" class="btn btn--primary btn--block" id="btnDigitalIdModalSubmit" style="margin-top:4px;">Continue</button>
     </div>
   </div>
 
