@@ -1,9 +1,13 @@
 package io.github.winfos.squizit;
 
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.webkit.JavascriptInterface;
+import androidx.core.content.FileProvider;
 import com.getcapacitor.BridgeActivity;
 import org.jitsi.meet.sdk.JitsiMeetActivity;
 import org.jitsi.meet.sdk.JitsiMeetConferenceOptions;
@@ -11,7 +15,10 @@ import org.jitsi.meet.sdk.JitsiMeetUserInfo;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -184,6 +191,76 @@ public class MainActivity extends BridgeActivity {
           // -- fail quietly rather than crash the WebView bridge call.
         }
       });
+    }
+
+    // App-update path (see app.js applyUpdate's native branch). Was:
+    // window.open(apkUrl) handing off to the phone's browser to download,
+    // then relying on the browser/OS to hand the file back for install --
+    // found stuck indefinitely on-device, downloaded APK sitting at 100%
+    // with no install prompt ever appearing, in Chrome AND when opened in
+    // an external browser. Root cause: Android/Play Protect scans a
+    // downloaded APK from an unrecognized publisher (a debug-signed build
+    // has no recognized signing identity) before allowing an install
+    // action, and that scan can hang or silently refuse -- an OS-level
+    // gate, not something any browser controls. Downloading inside the app
+    // and firing the package installer intent directly on the resulting
+    // file skips that hand-off entirely.
+    @JavascriptInterface
+    public void downloadAndInstallApk(String urlString) {
+      runOnUiThread(() -> {
+        // Android's own one-time security gate for installing anything
+        // from outside the Play Store -- can't be skipped or pre-granted,
+        // only requested. Send the user to the exact settings screen that
+        // grants it; app.js shows a message telling them to tap Update Now
+        // again afterward.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            && !getPackageManager().canRequestPackageInstalls()) {
+          Intent settingsIntent = new Intent(
+              Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+              Uri.parse("package:" + getPackageName()));
+          startActivity(settingsIntent);
+          getBridge().getWebView().evaluateJavascript(
+              "window.onApkInstallPermissionNeeded && window.onApkInstallPermissionNeeded();", null);
+          return;
+        }
+        new Thread(() -> downloadApkInBackground(urlString)).start();
+      });
+    }
+
+    private void downloadApkInBackground(String urlString) {
+      File apkFile = new File(getCacheDir(), "squizit-update.apk");
+      try {
+        URL url = new URL(urlString);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.connect();
+        try (InputStream in = conn.getInputStream(); FileOutputStream out = new FileOutputStream(apkFile)) {
+          byte[] buffer = new byte[8192];
+          int read;
+          while ((read = in.read(buffer)) != -1) out.write(buffer, 0, read);
+        }
+        runOnUiThread(() -> installDownloadedApk(apkFile));
+      } catch (Exception e) {
+        runOnUiThread(() -> {
+          String jsArg = JSONObject.quote(e.getMessage() == null ? "Download failed" : e.getMessage());
+          getBridge().getWebView().evaluateJavascript(
+              "window.onApkInstallFailed && window.onApkInstallFailed(" + jsArg + ");", null);
+        });
+      }
+    }
+
+    // Reuses the SAME FileProvider already declared in AndroidManifest.xml
+    // for quiz-sharing (authorities="${applicationId}.fileprovider",
+    // file_paths.xml already grants access to the whole cache dir) -- a
+    // plain file:// Uri would be blocked (StrictMode) on modern Android,
+    // this is the standard way to hand a package installer a file this app
+    // owns without making it world-readable.
+    private void installDownloadedApk(File apkFile) {
+      Uri apkUri = FileProvider.getUriForFile(
+          MainActivity.this, getPackageName() + ".fileprovider", apkFile);
+      Intent installIntent = new Intent(Intent.ACTION_VIEW);
+      installIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+      installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+      startActivity(installIntent);
     }
   }
 }

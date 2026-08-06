@@ -92,4 +92,14 @@
          everything except class-session audio until reinstalled. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!-- Lets MainActivity's downloadAndInstallApk trigger Android's package
+         installer directly on a downloaded update APK, instead of handing
+         off to the browser's own download flow (found stuck indefinitely
+         on-device, since Play Protect silently scans a debug-signed,
+         unrecognized-publisher APK before allowing an install action).
+         Declaring this permission does NOT grant it; the user still gets
+         a one-time system "allow installs from this app" prompt, same as
+         any app outside the Play Store, this just makes the app eligible
+         to ask. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>

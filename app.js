@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'QF_SYS_V.1.2.23';
+const APP_VERSION = 'QF_SYS_V.1.2.24';
 
 // Diagnostic only: captures the first uncaught error/rejection anywhere in
 // the app so it can be surfaced in the UI (Profile > Backup & Restore) --
@@ -2569,12 +2569,48 @@ async function checkForUpdate() {
   return checkForUpdateWeb();
 }
 
+function setUpdateStatusText(msg) {
+  const a = document.getElementById('versionPopupStatus');
+  const b = document.getElementById('profileUpdateStatus');
+  if (a) a.textContent = msg;
+  if (b) b.textContent = msg;
+}
+
+// Fired from MainActivity's AndroidBridge.downloadAndInstallApk -- Android
+// requires a one-time "allow this app to install updates" grant (its own
+// security gate for anything outside the Play Store, not something any app
+// can skip), so the bridge method opens that exact settings screen and
+// calls this instead of downloading, the first time. Tapping Update Now
+// again after granting it proceeds normally.
+window.onApkInstallPermissionNeeded = function () {
+  setUpdateStatusText('Allow sQUIZit to install updates on the screen that just opened, then tap Update Now again.');
+};
+window.onApkInstallFailed = function (message) {
+  setUpdateStatusText(`Update download failed: ${message || 'unknown error'}. Tap Update Now to try again.`);
+};
+
 async function applyUpdate() {
   if (isNativeApp()) {
-    // Can't silently self-update -- opens the .apk download, same proven
-    // pattern already used for the "Get a Free Gemini API Key" link.
-    // Android takes over from there (download -> install-as-update prompt).
-    if (latestApkDownloadUrl) window.open(latestApkDownloadUrl, '_blank', 'noopener');
+    if (!latestApkDownloadUrl) return;
+    // Was: window.open(latestApkDownloadUrl) -- handed off to the phone's
+    // browser to download, then relied on the browser/OS to hand the file
+    // back for install. Found on-device this reliably gets stuck: modern
+    // Android/Play Protect silently scans a downloaded APK from an
+    // unrecognized publisher before allowing an install action, and that
+    // scan can hang indefinitely for a debug-signed build -- happens the
+    // same way in any browser, since it's an OS-level gate, not a
+    // browser one. Downloading inside the app and firing Android's package
+    // installer intent directly (see downloadAndInstallApk in
+    // MainActivity.java) skips that hand-off entirely.
+    if (window.AndroidBridge && window.AndroidBridge.downloadAndInstallApk) {
+      setUpdateStatusText('Downloading update…');
+      window.AndroidBridge.downloadAndInstallApk(latestApkDownloadUrl);
+    } else {
+      // Fallback for a build that predates this bridge method -- can only
+      // happen on a device's very first update *into* a build that has
+      // this fix, since native JS only updates by installing a new APK.
+      window.open(latestApkDownloadUrl, '_blank', 'noopener');
+    }
     return;
   }
   // Ask the already-installed waiting worker to take over (sw.js's message
